@@ -566,8 +566,11 @@ describe("classifyFailoverReasonFromHttpStatus", () => {
     expect(classifyFailoverReasonFromHttpStatus(401, "invalid_api_key")).toBe("auth");
   });
 
-  it("treats HTTP 422 as format error", () => {
-    expect(classifyFailoverReasonFromHttpStatus(422)).toBe("format");
+  it("treats body-less HTTP 422 as unknown instead of format", () => {
+    expect(classifyFailoverReasonFromHttpStatus(422)).toBeNull();
+  });
+
+  it("treats HTTP 422 with an unclassifiable body as format error", () => {
     expect(classifyFailoverReasonFromHttpStatus(422, "check open ai req parameter error")).toBe(
       "format",
     );
