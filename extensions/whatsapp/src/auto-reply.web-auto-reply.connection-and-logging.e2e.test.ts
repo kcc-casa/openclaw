@@ -6,6 +6,7 @@ import { setLoggerOverride } from "openclaw/plugin-sdk/runtime-env";
 import { withEnvAsync } from "openclaw/plugin-sdk/testing";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { escapeRegExp, formatEnvelopeTimestamp } from "../../../test/helpers/envelope-timestamp.js";
+import { WhatsAppAuthUnstableError } from "./auth-store.js";
 import {
   createWebInboundDeliverySpies,
   createMockWebListener,
@@ -174,6 +175,37 @@ describe("web auto-reply connection", () => {
     expect(runtime.error).toHaveBeenCalledWith(expect.stringContaining("status 440"));
     expect(runtime.error).toHaveBeenCalledWith(expect.stringContaining("session conflict"));
     expect(runtime.error).toHaveBeenCalledWith(expect.stringContaining("Stopping web monitoring"));
+  });
+
+  it("retries inbox attach when auth state is still stabilizing", async () => {
+    const sleep = vi.fn(async () => {});
+    const listenerFactory = vi.fn(async () => {
+      if (listenerFactory.mock.calls.length === 1) {
+        throw new WhatsAppAuthUnstableError(
+          "WhatsApp auth state is still stabilizing; retrying inbox attach.",
+        );
+      }
+      return createMockWebListener();
+    });
+    const { runtime, controller, run } = startWebAutoReplyMonitor({
+      monitorWebChannelFn: monitorWebChannel as never,
+      listenerFactory,
+      sleep,
+      reconnect: { initialMs: 5, maxMs: 5, maxAttempts: 3, factor: 1.1 },
+    });
+
+    await vi.waitFor(
+      () => {
+        expect(listenerFactory).toHaveBeenCalledTimes(2);
+      },
+      { timeout: 250, interval: 2 },
+    );
+
+    controller.abort();
+    await run;
+
+    expect(sleep).toHaveBeenCalledWith(expect.any(Number), expect.any(AbortSignal));
+    expect(runtime.error).toHaveBeenCalledWith(expect.stringContaining("Retrying inbox attach"));
   });
 
   it("forces reconnect when watchdog closes without onClose", async () => {
@@ -508,7 +540,8 @@ describe("web auto-reply connection", () => {
     const sendComposing = vi.fn().mockResolvedValue(undefined);
     const sendMedia = vi.fn().mockResolvedValue(undefined);
 
-    const replyResolver = vi.fn().mockImplementation(async (_ctx, opts) => {
+    const replyResolver = vi.fn().mockImplementation(async (ctx, opts) => {
+      void ctx;
       opts?.onTypingController?.(typingMock);
       return { text: "final reply" };
     });

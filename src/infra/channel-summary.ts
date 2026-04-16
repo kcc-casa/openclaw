@@ -199,6 +199,8 @@ export async function buildChannelSummary(
       : undefined;
 
     const summaryRecord = summary;
+    const authState =
+      summaryRecord && typeof summaryRecord.authState === "string" ? summaryRecord.authState : null;
     const linked =
       summaryRecord && typeof summaryRecord.linked === "boolean" ? summaryRecord.linked : null;
     const configured =
@@ -208,6 +210,8 @@ export async function buildChannelSummary(
 
     const status = !anyEnabled
       ? "disabled"
+      : authState === "unstable"
+        ? "auth stabilizing"
       : linked !== null
         ? linked
           ? "linked"
@@ -219,7 +223,7 @@ export async function buildChannelSummary(
     const statusColor =
       status === "linked" || status === "configured"
         ? theme.success
-        : status === "not linked"
+        : status === "not linked" || status === "auth stabilizing"
           ? theme.error
           : theme.muted;
     const baseLabel = plugin.meta.label ?? plugin.id;

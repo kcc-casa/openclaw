@@ -11,6 +11,7 @@ import {
 
 type WhatsAppAccountStatus = {
   accountId?: unknown;
+  authState?: unknown;
   enabled?: unknown;
   linked?: unknown;
   connected?: unknown;
@@ -27,6 +28,7 @@ function readWhatsAppAccountStatus(value: ChannelAccountSnapshot): WhatsAppAccou
   }
   return {
     accountId: value.accountId,
+    authState: value.authState,
     enabled: value.enabled,
     linked: value.linked,
     connected: value.connected,
@@ -46,6 +48,7 @@ export function collectWhatsAppStatusIssues(
     readAccount: readWhatsAppAccountStatus,
     collectIssues: ({ account, accountId, issues }) => {
       const linked = account.linked === true;
+      const authState = asString(account.authState);
       const running = account.running === true;
       const connected = account.connected === true;
       const reconnectAttempts =
@@ -54,6 +57,17 @@ export function collectWhatsAppStatusIssues(
         typeof account.lastInboundAt === "number" ? account.lastInboundAt : null;
       const lastError = asString(account.lastError);
       const healthState = asString(account.healthState);
+
+      if (authState === "unstable") {
+        issues.push({
+          channel: "whatsapp",
+          accountId,
+          kind: "auth",
+          message: "Auth state is still stabilizing.",
+          fix: "Wait a moment for queued credential writes to finish, then retry the command or rerun health.",
+        });
+        return;
+      }
 
       if (!linked) {
         issues.push({

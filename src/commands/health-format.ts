@@ -183,6 +183,12 @@ export const formatHealthChannelLines = (
       continue;
     }
 
+    const authState = typeof baseSummary.authState === "string" ? baseSummary.authState : null;
+    if (authState === "unstable") {
+      lines.push(`${label}: auth stabilizing`);
+      continue;
+    }
+
     const configured = typeof baseSummary.configured === "boolean" ? baseSummary.configured : null;
     if (configured === false) {
       lines.push(`${label}: not configured`);

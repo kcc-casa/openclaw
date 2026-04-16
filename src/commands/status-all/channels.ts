@@ -188,16 +188,18 @@ const buildAccountNotes = (params: {
 };
 
 function resolveLinkFields(summary: unknown): {
+  authState: string | null;
   linked: boolean | null;
   authAgeMs: number | null;
   selfE164: string | null;
 } {
   const rec = asRecord(summary);
+  const authState = typeof rec.authState === "string" ? rec.authState : null;
   const linked = typeof rec.linked === "boolean" ? rec.linked : null;
   const authAgeMs = typeof rec.authAgeMs === "number" ? rec.authAgeMs : null;
   const self = asRecord(rec.self);
   const selfE164 = typeof self.e164 === "string" && self.e164.trim() ? self.e164.trim() : null;
-  return { linked, authAgeMs, selfE164 };
+  return { authState, linked, authAgeMs, selfE164 };
 }
 
 function collectMissingPaths(accounts: ChannelAccountRow[]): string[] {
@@ -311,6 +313,9 @@ export async function buildChannelsTable(
       if (unavailableConfiguredAccounts.length > 0) {
         return "warn";
       }
+      if (link.authState === "unstable") {
+        return "warn";
+      }
       if (link.linked === false) {
         return "setup";
       }
@@ -338,6 +343,9 @@ export async function buildChannelsTable(
       }
       if (issues.length > 0) {
         return issues[0]?.message ?? "misconfigured";
+      }
+      if (link.authState === "unstable") {
+        return "auth stabilizing";
       }
 
       if (link.linked !== null) {

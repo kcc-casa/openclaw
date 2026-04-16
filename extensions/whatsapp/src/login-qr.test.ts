@@ -3,7 +3,8 @@ import { startWebLoginWithQr, waitForWebLogin } from "./login-qr.js";
 import {
   createWaSocket,
   logoutWeb,
-  waitForCredsSaveQueueWithTimeout,
+  readWebAuthExistsForDecision,
+  WHATSAPP_AUTH_UNSTABLE_CODE,
   waitForWaConnection,
 } from "./session.js";
 
@@ -26,20 +27,21 @@ vi.mock("./session.js", async () => {
       (err as { status?: number })?.status ??
       (err as { error?: { output?: { statusCode?: number } } })?.error?.output?.statusCode,
   );
-  const webAuthExists = vi.fn(async () => false);
+  const readWebAuthExistsForDecision = vi.fn(async () => ({
+    outcome: "stable" as const,
+    exists: false,
+  }));
   const readWebSelfId = vi.fn(() => ({ e164: null, jid: null }));
   const logoutWeb = vi.fn(async () => true);
-  const waitForCredsSaveQueueWithTimeout = vi.fn(async () => {});
   return {
     ...actual,
     createWaSocket,
     waitForWaConnection,
     formatError,
     getStatusCode,
-    webAuthExists,
+    readWebAuthExistsForDecision,
     readWebSelfId,
     logoutWeb,
-    waitForCredsSaveQueueWithTimeout,
   };
 });
 
@@ -48,8 +50,8 @@ vi.mock("./qr-image.js", () => ({
 }));
 
 const createWaSocketMock = vi.mocked(createWaSocket);
+const readWebAuthExistsForDecisionMock = vi.mocked(readWebAuthExistsForDecision);
 const waitForWaConnectionMock = vi.mocked(waitForWaConnection);
-const waitForCredsSaveQueueWithTimeoutMock = vi.mocked(waitForCredsSaveQueueWithTimeout);
 const logoutWebMock = vi.mocked(logoutWeb);
 
 async function flushTasks() {
@@ -63,15 +65,10 @@ describe("login-qr", () => {
   });
 
   it("restarts login once on status 515 and completes", async () => {
-    let releaseCredsFlush: (() => void) | undefined;
-    const credsFlushGate = new Promise<void>((resolve) => {
-      releaseCredsFlush = resolve;
-    });
     waitForWaConnectionMock
       // Baileys v7 wraps the error: { error: BoomError(515) }
       .mockRejectedValueOnce({ error: { output: { statusCode: 515 } } })
       .mockResolvedValueOnce(undefined);
-    waitForCredsSaveQueueWithTimeoutMock.mockReturnValueOnce(credsFlushGate);
 
     const start = await startWebLoginWithQr({ timeoutMs: 5000 });
     expect(start.qrDataUrl).toBe("data:image/png;base64,base64");
@@ -80,11 +77,7 @@ describe("login-qr", () => {
     await flushTasks();
     await flushTasks();
 
-    expect(createWaSocketMock).toHaveBeenCalledTimes(1);
-    expect(waitForCredsSaveQueueWithTimeoutMock).toHaveBeenCalledOnce();
-    expect(waitForCredsSaveQueueWithTimeoutMock).toHaveBeenCalledWith(expect.any(String));
-
-    releaseCredsFlush?.();
+    expect(createWaSocketMock).toHaveBeenCalledTimes(2);
     const result = await resultPromise;
 
     expect(result.connected).toBe(true);
@@ -125,5 +118,17 @@ describe("login-qr", () => {
       connected: false,
       message: "WhatsApp login failed: cleanup failed",
     });
+  });
+
+  it("returns an unstable-auth result when creds flush does not settle", async () => {
+    readWebAuthExistsForDecisionMock.mockResolvedValueOnce({ outcome: "unstable" });
+
+    const result = await startWebLoginWithQr({ timeoutMs: 5000 });
+
+    expect(result).toEqual({
+      code: WHATSAPP_AUTH_UNSTABLE_CODE,
+      message: "WhatsApp auth state is still stabilizing. Retry login in a moment.",
+    });
+    expect(createWaSocketMock).not.toHaveBeenCalled();
   });
 });

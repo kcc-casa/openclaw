@@ -12,7 +12,6 @@ import {
   formatError,
   getStatusCode,
   logoutWeb,
-  waitForCredsSaveQueueWithTimeout,
   waitForWaConnection,
 } from "./session.js";
 
@@ -175,7 +174,6 @@ export async function waitForWhatsAppLoginResult(params: {
         restarted = true;
         params.runtime.log(info(WHATSAPP_LOGIN_RESTART_MESSAGE));
         closeWaSocket(currentSock);
-        await waitForCredsSaveQueueWithTimeout(params.authDir);
         try {
           currentSock = await createSocket(false, params.verbose, {
             authDir: params.authDir,
@@ -347,7 +345,6 @@ export class WhatsAppConnectionController {
     let sock: WaSocket | null = null;
     let connection: WhatsAppLiveConnection | null = null;
     try {
-      await waitForCredsSaveQueueWithTimeout(this.authDir);
       sock = await createWaSocket(false, this.verbose, {
         authDir: this.authDir,
       });
