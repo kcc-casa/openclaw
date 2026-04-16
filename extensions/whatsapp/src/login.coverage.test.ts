@@ -51,7 +51,7 @@ vi.mock("./session.js", async () => {
       (err as { status?: number })?.status ??
       (err as { error?: { output?: { statusCode?: number } } })?.error?.output?.statusCode,
   );
-  const waitForCredsSaveQueueWithTimeout = vi.fn(async () => {});
+  const waitForCredsSaveQueueWithTimeout = vi.fn(async () => "drained" as const);
   return {
     ...actual,
     createWaSocket,
@@ -86,7 +86,7 @@ describe("loginWeb coverage", () => {
     vi.clearAllMocks();
     createWaSocketMock.mockClear();
     waitForWaConnectionMock.mockReset().mockResolvedValue(undefined);
-    waitForCredsSaveQueueWithTimeoutMock.mockReset().mockResolvedValue(undefined);
+    waitForCredsSaveQueueWithTimeoutMock.mockReset().mockResolvedValue("drained");
     formatErrorMock.mockReset().mockImplementation((err: unknown) => `formatted:${String(err)}`);
     rmMock.mockClear();
   });
@@ -99,8 +99,8 @@ describe("loginWeb coverage", () => {
   });
 
   it("restarts once when WhatsApp requests code 515", async () => {
-    let releaseCredsFlush: (() => void) | undefined;
-    const credsFlushGate = new Promise<void>((resolve) => {
+    let releaseCredsFlush: ((value: "drained") => void) | undefined;
+    const credsFlushGate = new Promise<"drained">((resolve) => {
       releaseCredsFlush = resolve;
     });
     waitForWaConnectionMock
@@ -116,7 +116,7 @@ describe("loginWeb coverage", () => {
     expect(waitForCredsSaveQueueWithTimeoutMock).toHaveBeenCalledOnce();
     expect(waitForCredsSaveQueueWithTimeoutMock).toHaveBeenCalledWith(testState.authDir);
 
-    releaseCredsFlush?.();
+    releaseCredsFlush?.("drained");
     await pendingLogin;
 
     expect(createWaSocketMock).toHaveBeenCalledTimes(2);

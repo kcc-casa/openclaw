@@ -1,6 +1,6 @@
 import type { ChannelPlugin } from "openclaw/plugin-sdk/core";
 import { type ResolvedWhatsAppAccount } from "./accounts.js";
-import { webAuthExists } from "./auth-store.js";
+import { readWebAuthExistsForDecision } from "./auth-store.js";
 import { resolveWhatsAppGroupIntroHint } from "./group-intro.js";
 import {
   resolveWhatsAppGroupRequireMention,
@@ -19,7 +19,10 @@ export const whatsappSetupPlugin: ChannelPlugin<ResolvedWhatsAppAccount> = {
     },
     setupWizard: whatsappSetupWizardProxy,
     setup: whatsappSetupAdapter,
-    isConfigured: async (account) => await webAuthExists(account.authDir),
+    isConfigured: async (account) => {
+      const auth = await readWebAuthExistsForDecision(account.authDir);
+      return auth.outcome === "stable" && auth.exists;
+    },
   }),
   lifecycle: {
     detectLegacyStateMigrations: ({ oauthDir }) =>

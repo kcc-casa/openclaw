@@ -1,9 +1,20 @@
 import type { ChannelSetupWizard } from "openclaw/plugin-sdk/setup";
-import { DEFAULT_ACCOUNT_ID, setSetupChannelEnabled } from "openclaw/plugin-sdk/setup";
-import { listWhatsAppAccountIds } from "./accounts.js";
-import { detectWhatsAppLinked, finalizeWhatsAppSetup } from "./setup-finalize.js";
+import {
+  DEFAULT_ACCOUNT_ID,
+  setSetupChannelEnabled,
+  type OpenClawConfig,
+} from "openclaw/plugin-sdk/setup";
+import { listWhatsAppAccountIds, resolveWhatsAppAuthDir } from "./accounts.js";
+import { readWebAuthExistsBestEffort } from "./auth-store.js";
+import { finalizeWhatsAppSetup } from "./setup-finalize.js";
 
 const channel = "whatsapp" as const;
+
+async function detectWhatsAppLinkedForStatus(cfg: OpenClawConfig, accountId: string) {
+  const { authDir } = resolveWhatsAppAuthDir({ cfg, accountId });
+  const auth = await readWebAuthExistsBestEffort(authDir);
+  return auth.exists || auth.timedOut;
+}
 
 export const whatsappSetupWizard: ChannelSetupWizard = {
   channel,
@@ -16,7 +27,7 @@ export const whatsappSetupWizard: ChannelSetupWizard = {
     unconfiguredScore: 4,
     resolveConfigured: async ({ cfg, accountId }) => {
       for (const resolvedAccountId of accountId ? [accountId] : listWhatsAppAccountIds(cfg)) {
-        if (await detectWhatsAppLinked(cfg, resolvedAccountId)) {
+        if (await detectWhatsAppLinkedForStatus(cfg, resolvedAccountId)) {
           return true;
         }
       }
@@ -28,7 +39,7 @@ export const whatsappSetupWizard: ChannelSetupWizard = {
           (accountId ? [accountId] : listWhatsAppAccountIds(cfg)).map(
             async (resolvedAccountId) => ({
               accountId: resolvedAccountId,
-              linked: await detectWhatsAppLinked(cfg, resolvedAccountId),
+              linked: await detectWhatsAppLinkedForStatus(cfg, resolvedAccountId),
             }),
           ),
         )

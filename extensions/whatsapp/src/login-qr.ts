@@ -10,9 +10,19 @@ import {
   WHATSAPP_LOGGED_OUT_QR_MESSAGE,
 } from "./connection-controller.js";
 import { renderQrPngBase64 } from "./qr-image.js";
-import { createWaSocket, readWebSelfId, webAuthExists } from "./session.js";
+import {
+  createWaSocket,
+  readWebAuthExistsForDecision,
+  readWebSelfId,
+  WHATSAPP_AUTH_UNSTABLE_CODE,
+} from "./session.js";
 
 type WaSocket = Awaited<ReturnType<typeof createWaSocket>>;
+export type StartWebLoginWithQrResult = {
+  qrDataUrl?: string;
+  message: string;
+  code?: typeof WHATSAPP_AUTH_UNSTABLE_CODE;
+};
 
 type ActiveLogin = {
   accountId: string;
@@ -101,13 +111,19 @@ export async function startWebLoginWithQr(
     accountId?: string;
     runtime?: RuntimeEnv;
   } = {},
-): Promise<{ qrDataUrl?: string; message: string }> {
+): Promise<StartWebLoginWithQrResult> {
   const runtime = opts.runtime ?? defaultRuntime;
   const cfg = loadConfig();
   const account = resolveWhatsAppAccount({ cfg, accountId: opts.accountId });
-  const hasWeb = await webAuthExists(account.authDir);
-  const selfId = readWebSelfId(account.authDir);
-  if (hasWeb && !opts.force) {
+  const authState = await readWebAuthExistsForDecision(account.authDir);
+  if (authState.outcome === "unstable") {
+    return {
+      code: WHATSAPP_AUTH_UNSTABLE_CODE,
+      message: "WhatsApp auth state is still stabilizing. Retry login in a moment.",
+    };
+  }
+  if (authState.exists && !opts.force) {
+    const selfId = readWebSelfId(account.authDir);
     const who = selfId.e164 ?? selfId.jid ?? "unknown";
     return {
       message: `WhatsApp is already linked (${who}). Say “relink” if you want a fresh QR.`,

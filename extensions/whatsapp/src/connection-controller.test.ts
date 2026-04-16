@@ -12,7 +12,7 @@ vi.mock("./session.js", async () => {
   return {
     ...actual,
     createWaSocket: vi.fn(),
-    waitForCredsSaveQueueWithTimeout: vi.fn(async () => {}),
+    waitForCredsSaveQueueWithTimeout: vi.fn(async () => "drained" as const),
     waitForWaConnection: vi.fn(),
   };
 });
@@ -85,6 +85,7 @@ describe("WhatsAppConnectionController", () => {
     const callOrder: string[] = [];
     waitForCredsSaveQueueWithTimeoutMock.mockImplementationOnce(async () => {
       callOrder.push("wait");
+      return "drained";
     });
     createWaSocketMock.mockImplementationOnce(async () => {
       callOrder.push("create");

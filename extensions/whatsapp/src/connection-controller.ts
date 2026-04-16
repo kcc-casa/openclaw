@@ -1,6 +1,7 @@
 import { DisconnectReason, type WASocket } from "@whiskeysockets/baileys";
 import { info } from "openclaw/plugin-sdk/runtime-env";
 import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime-env";
+import { logInfo } from "openclaw/plugin-sdk/text-runtime";
 import {
   registerWhatsAppConnectionController,
   unregisterWhatsAppConnectionController,
@@ -175,7 +176,14 @@ export async function waitForWhatsAppLoginResult(params: {
         restarted = true;
         params.runtime.log(info(WHATSAPP_LOGIN_RESTART_MESSAGE));
         closeWaSocket(currentSock);
-        await waitForCredsSaveQueueWithTimeout(params.authDir);
+        const flushResult = await waitForCredsSaveQueueWithTimeout(params.authDir);
+        if (flushResult === "timed_out") {
+          params.runtime.log(
+            info(
+              "WhatsApp creds save is still flushing; retrying socket startup with the existing auth state.",
+            ),
+          );
+        }
         try {
           currentSock = await createSocket(false, params.verbose, {
             authDir: params.authDir,
@@ -347,7 +355,12 @@ export class WhatsAppConnectionController {
     let sock: WaSocket | null = null;
     let connection: WhatsAppLiveConnection | null = null;
     try {
-      await waitForCredsSaveQueueWithTimeout(this.authDir);
+      const flushResult = await waitForCredsSaveQueueWithTimeout(this.authDir);
+      if (flushResult === "timed_out") {
+        logInfo(
+          "WhatsApp creds save is still flushing; continuing reconnect with the current auth state.",
+        );
+      }
       sock = await createWaSocket(false, this.verbose, {
         authDir: this.authDir,
       });

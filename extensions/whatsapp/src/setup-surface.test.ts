@@ -31,7 +31,12 @@ const hoisted = vi.hoisted(() => ({
   ),
   loginWeb: vi.fn(async () => {}),
   pathExists: vi.fn(async () => false),
-  resolveWhatsAppAuthDir: vi.fn(() => ({
+  readWebAuthExistsBestEffort: vi.fn<
+    (authDir: string) => Promise<{ exists: boolean; timedOut: boolean }>
+  >(async () => ({ exists: false, timedOut: false })),
+  resolveWhatsAppAuthDir: vi.fn<
+    (params: { cfg: OpenClawConfig; accountId: string }) => { authDir: string }
+  >(() => ({
     authDir: "/tmp/openclaw-whatsapp-test",
   })),
 }));
@@ -63,6 +68,14 @@ vi.mock("./accounts.js", async () => {
   return {
     ...actual,
     resolveWhatsAppAuthDir: hoisted.resolveWhatsAppAuthDir,
+  };
+});
+
+vi.mock("./auth-store.js", async () => {
+  const actual = await vi.importActual<typeof import("./auth-store.js")>("./auth-store.js");
+  return {
+    ...actual,
+    readWebAuthExistsBestEffort: hoisted.readWebAuthExistsBestEffort,
   };
 });
 
@@ -136,6 +149,11 @@ describe("whatsapp setup wizard", () => {
     hoisted.loginWeb.mockReset();
     hoisted.pathExists.mockReset();
     hoisted.pathExists.mockResolvedValue(false);
+    hoisted.readWebAuthExistsBestEffort.mockReset();
+    hoisted.readWebAuthExistsBestEffort.mockResolvedValue({
+      exists: false,
+      timedOut: false,
+    });
     hoisted.resolveWhatsAppAuthDir.mockReset();
     hoisted.resolveWhatsAppAuthDir.mockReturnValue({ authDir: "/tmp/openclaw-whatsapp-test" });
   });
@@ -203,9 +221,13 @@ describe("whatsapp setup wizard", () => {
   });
 
   it("uses configured defaultAccount for omitted-account setup status", async () => {
-    hoisted.detectWhatsAppLinked.mockImplementation(
-      async (_cfg: OpenClawConfig, accountId: string) => accountId === "work",
-    );
+    hoisted.resolveWhatsAppAuthDir.mockImplementation(({ accountId }: { accountId: string }) => ({
+      authDir: accountId === "work" ? "/tmp/work" : "/tmp/default",
+    }));
+    hoisted.readWebAuthExistsBestEffort.mockImplementation(async (authDir: string) => ({
+      exists: authDir === "/tmp/work",
+      timedOut: false,
+    }));
 
     const status = await whatsappGetStatus({
       cfg: {
@@ -228,11 +250,36 @@ describe("whatsapp setup wizard", () => {
 
     expect(status.configured).toBe(true);
     expect(status.statusLines).toEqual(["WhatsApp (work): linked"]);
-    expect(hoisted.detectWhatsAppLinked).toHaveBeenCalledWith(
-      expect.any(Object),
-      DEFAULT_ACCOUNT_ID,
-    );
-    expect(hoisted.detectWhatsAppLinked).toHaveBeenCalledWith(expect.any(Object), "work");
+    expect(hoisted.readWebAuthExistsBestEffort).toHaveBeenCalledWith("/tmp/default");
+    expect(hoisted.readWebAuthExistsBestEffort).toHaveBeenCalledWith("/tmp/work");
+  });
+
+  it("keeps setup status linked when auth reads time out", async () => {
+    hoisted.resolveWhatsAppAuthDir.mockReturnValue({ authDir: "/tmp/work" });
+    hoisted.readWebAuthExistsBestEffort.mockResolvedValueOnce({
+      exists: false,
+      timedOut: true,
+    });
+
+    const status = await whatsappGetStatus({
+      cfg: {
+        channels: {
+          whatsapp: {
+            accounts: {
+              work: {
+                authDir: "/tmp/work",
+              },
+            },
+          },
+        },
+      } as OpenClawConfig,
+      accountOverrides: {
+        whatsapp: "work",
+      },
+    });
+
+    expect(status.configured).toBe(true);
+    expect(status.statusLines).toEqual(["WhatsApp (work): linked"]);
   });
 
   it("uses configured defaultAccount for omitted-account finalize writes", async () => {
