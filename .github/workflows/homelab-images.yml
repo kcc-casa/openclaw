@@ -20,7 +20,7 @@ jobs:
       - self-hosted
       - unraid
       - docker
-      - openclaw-images
+      - openclaw
     permissions:
       contents: read
       id-token: write
