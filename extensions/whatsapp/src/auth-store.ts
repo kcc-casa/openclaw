@@ -254,8 +254,12 @@ async function shouldClearOnLogout(authDir: string, isLegacyAuthDir: boolean): P
           : false;
       });
     }
-    const entries = await fs.readdir(authDir);
-    return entries.length > 0;
+    const credsStats = await fs.stat(resolveWebCredsPath(authDir)).catch(() => null);
+    if (credsStats?.isFile()) {
+      return true;
+    }
+    const backupStats = await fs.stat(resolveWebCredsBackupPath(authDir)).catch(() => null);
+    return backupStats?.isFile() === true;
   } catch (error) {
     const codeValue =
       error && typeof error === "object" && "code" in error
