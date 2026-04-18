@@ -3,7 +3,7 @@ name: homelab-images
 on:
   push:
     branches:
-      - homelab/main
+      - 'homelab/release-*'
     paths:
       - .github/workflows/homelab-images.yml
       - Dockerfile
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   build-and-publish:
-    if: ${{ github.ref == 'refs/heads/homelab/main' && (github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')) }}
+    if: ${{ startsWith(github.ref, 'refs/heads/homelab/release-') && (github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')) }}
     runs-on:
       - self-hosted
       - unraid
@@ -100,9 +100,11 @@ jobs:
         run: |
           set -euo pipefail
           short_sha="${GITHUB_SHA::12}"
+          branch_name="${GITHUB_REF_NAME#homelab/}"
+          branch_slug="${branch_name//\//-}"
           {
-            echo "IMAGE_TAG=homelab-${short_sha}"
-            echo "IMAGE=${IMAGE_REPO}:homelab-${short_sha}"
+            echo "IMAGE_TAG=${branch_slug}-${short_sha}"
+            echo "IMAGE=${IMAGE_REPO}:${branch_slug}-${short_sha}"
           } >> "${GITHUB_ENV}"
 
       - name: Build and push OpenClaw image
