@@ -37,6 +37,7 @@ import {
 const OLLAMA_SUGGESTED_MODELS_LOCAL = [OLLAMA_DEFAULT_MODEL];
 const OLLAMA_SUGGESTED_MODELS_CLOUD = ["kimi-k2.5:cloud", "minimax-m2.7:cloud", "glm-5.1:cloud"];
 const OLLAMA_CONTEXT_ENRICH_LIMIT = 200;
+const OLLAMA_CLOUD_MAX_DISCOVERED_MODELS = 500;
 
 type OllamaSetupOptions = {
   customBaseUrl?: string;
@@ -524,7 +525,9 @@ export async function promptAndConfigureOllama(params: {
       secretInputMode: params.secretInputMode,
       allowSecretRefPrompt: params.allowSecretRefPrompt,
     });
-    const { reachable, models: discoveredModels } = await fetchOllamaModels(OLLAMA_CLOUD_BASE_URL);
+    const { reachable, models: rawDiscoveredModels } =
+      await fetchOllamaModels(OLLAMA_CLOUD_BASE_URL);
+    const discoveredModels = rawDiscoveredModels.slice(0, OLLAMA_CLOUD_MAX_DISCOVERED_MODELS);
     const enrichedModels =
       reachable && discoveredModels.length > 0
         ? await enrichOllamaModelsWithContext(
