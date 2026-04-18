@@ -30,6 +30,11 @@ OpenClaw Onboard guides you step by step through setting up the gateway, workspa
 Works with npm, pnpm, or bun.
 New install? Start here: [Getting started](https://docs.openclaw.ai/start/getting-started)
 
+## Homelab fork note
+
+The `kcc-casa/openclaw` fork follows a release-pinned customization model rather than building production intent from moving `main`.
+See [docs/homelab-customization-strategy.md](docs/homelab-customization-strategy.md) for the branch strategy, image-build contract, and deployment flow used for homelab-specific source patches and tooling.
+
 ## Sponsors
 
 <table>
