@@ -21,6 +21,7 @@ type WaSocket = Awaited<ReturnType<typeof createWaSocket>>;
 export type StartWebLoginWithQrResult = {
   qrDataUrl?: string;
   message: string;
+  connected?: boolean;
   code?: typeof WHATSAPP_AUTH_UNSTABLE_CODE;
 };
 
@@ -263,8 +264,10 @@ export async function startWebLoginWithQr(
   if (loginStartResult.outcome === "connected") {
     const selfId = readWebSelfId(account.authDir);
     const who = selfId.e164 ?? selfId.jid ?? "unknown";
+    await resetActiveLogin(account.accountId);
     return {
       message: `WhatsApp recovered the existing linked session (${who}).`,
+      connected: true,
     };
   }
 

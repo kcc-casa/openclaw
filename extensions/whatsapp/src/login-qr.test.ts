@@ -177,8 +177,13 @@ describe("login-qr", () => {
     const result = await startWebLoginWithQr({ timeoutMs: 5000 });
 
     expect(result).toEqual({
+      connected: true,
       message: "WhatsApp recovered the existing linked session (+5511977000000).",
     });
     expect(createWaSocketMock).toHaveBeenCalledOnce();
+    await expect(waitForWebLogin({ timeoutMs: 1000 })).resolves.toEqual({
+      connected: false,
+      message: "No active WhatsApp login in progress.",
+    });
   });
 });

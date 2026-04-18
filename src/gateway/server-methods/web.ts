@@ -72,6 +72,9 @@ export const webHandlers: GatewayRequestHandlers = {
         verbose: Boolean((params as { verbose?: boolean }).verbose),
         accountId,
       });
+      if (result.connected) {
+        await context.startChannel(provider.id, accountId);
+      }
       respond(true, result, undefined);
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, formatForLog(err)));
