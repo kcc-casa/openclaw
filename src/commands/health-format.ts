@@ -185,6 +185,18 @@ export const formatHealthChannelLines = (
       continue;
     }
 
+    const linked = typeof baseSummary.linked === "boolean" ? baseSummary.linked : null;
+    if (linked !== null) {
+      if (linked) {
+        const authAgeMs = typeof baseSummary.authAgeMs === "number" ? baseSummary.authAgeMs : null;
+        const authLabel = authAgeMs != null ? ` (auth age ${Math.round(authAgeMs / 60000)}m)` : "";
+        lines.push(`${label}: linked${authLabel}`);
+      } else {
+        lines.push(`${label}: not linked`);
+      }
+      continue;
+    }
+
     const configured = typeof baseSummary.configured === "boolean" ? baseSummary.configured : null;
     if (configured === false) {
       lines.push(`${label}: not configured`);
