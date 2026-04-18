@@ -864,6 +864,41 @@ describe("dispatchReplyFromConfig", () => {
     });
   });
 
+  it("does not start eager typing for silent unauthorized whole-message commands", async () => {
+    setNoAbort();
+    const cfg = emptyConfig;
+    const dispatcher = createDispatcher();
+    const startTypingLoop = vi.fn(async () => undefined);
+    const replyResolver = vi.fn(async () => undefined);
+    const ctx = buildTestCtx({
+      Provider: "whatsapp",
+      Surface: "whatsapp",
+      ChatType: "direct",
+      CommandAuthorized: false,
+      CommandBody: "/reset",
+      RawBody: "/reset",
+      Body: "/reset",
+      OriginatingChannel: "whatsapp",
+      OriginatingTo: "+15550001111",
+    });
+
+    await dispatchReplyFromConfig({
+      ctx,
+      cfg,
+      dispatcher,
+      replyResolver,
+      replyOptions: {
+        internalStartTypingOnAccept: true,
+        internalTypingController: {
+          startTypingLoop,
+        },
+      } as GetReplyOptions,
+    });
+
+    expect(replyResolver).toHaveBeenCalledTimes(1);
+    expect(startTypingLoop).not.toHaveBeenCalled();
+  });
+
   it("routes when provider is webchat but surface carries originating channel metadata", async () => {
     setNoAbort();
     mocks.routeReply.mockClear();

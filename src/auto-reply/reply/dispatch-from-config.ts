@@ -52,6 +52,7 @@ import {
   shouldAttemptTtsPayload,
 } from "../../tts/tts-config.js";
 import { INTERNAL_MESSAGE_CHANNEL, normalizeMessageChannel } from "../../utils/message-channel.js";
+import { shouldHandleTextCommands } from "../commands-text-routing.js";
 import type { BlockReplyContext } from "../get-reply-options.types.js";
 import { getReplyPayloadMetadata, type ReplyPayload } from "../reply-payload.js";
 import type { FinalizedMsgContext } from "../templating.js";
@@ -70,6 +71,7 @@ import type {
 import { claimInboundDedupe, commitInboundDedupe, releaseInboundDedupe } from "./inbound-dedupe.js";
 import { resolveReplyRoutingDecision } from "./routing-policy.js";
 import { resolveRunTypingPolicy } from "./typing-policy.js";
+import { isSilentUnauthorizedWholeMessageControlCommand } from "./unauthorized-control-command.js";
 
 let routeReplyRuntimePromise: Promise<typeof import("./route-reply.runtime.js")> | null = null;
 let getReplyFromConfigRuntimePromise: Promise<
@@ -887,7 +889,22 @@ export async function dispatchReplyFromConfig(
       systemEvent: shouldRouteToOriginating,
     });
     const internalReplyOptions = params.replyOptions as InternalDispatchReplyOptions | undefined;
-    if (internalReplyOptions?.internalStartTypingOnAccept && !typing.suppressTyping) {
+    const commandAuthorized = ctx.CommandAuthorized;
+    if (
+      internalReplyOptions?.internalStartTypingOnAccept &&
+      !typing.suppressTyping &&
+      !isSilentUnauthorizedWholeMessageControlCommand({
+        ctx,
+        cfg,
+        allowTextCommands: shouldHandleTextCommands({
+          cfg,
+          surface: normalizeLowercaseStringOrEmpty(ctx.Surface ?? ctx.Provider),
+          commandSource: ctx.CommandSource,
+        }),
+        commandAuthorized,
+        agentId: sessionAgentId,
+      })
+    ) {
       await internalReplyOptions.internalTypingController?.startTypingLoop();
     }
 
