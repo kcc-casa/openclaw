@@ -4,6 +4,7 @@ import {
   createWaSocket,
   logoutWeb,
   readWebAuthExistsForDecision,
+  readWebSelfId,
   WHATSAPP_AUTH_UNSTABLE_CODE,
   waitForWaConnection,
 } from "./session.js";
@@ -11,12 +12,16 @@ import {
 vi.mock("./session.js", async () => {
   const actual = await vi.importActual<typeof import("./session.js")>("./session.js");
   const createWaSocket = vi.fn(
-    async (_printQr: boolean, _verbose: boolean, opts?: { onQr?: (qr: string) => void }) => {
+    async (
+      _printQr: boolean,
+      _verbose: boolean,
+      opts?: { authDir?: string; onQr?: (qr: string) => void },
+    ) => {
       const sock = { ws: { close: vi.fn() } };
       if (opts?.onQr) {
         setImmediate(() => opts.onQr?.("qr-data"));
       }
-      return sock;
+      return sock as never;
     },
   );
   const waitForWaConnection = vi.fn();
@@ -31,7 +36,7 @@ vi.mock("./session.js", async () => {
     outcome: "stable" as const,
     exists: false,
   }));
-  const readWebSelfId = vi.fn(() => ({ e164: null, jid: null }));
+  const readWebSelfId = vi.fn(() => ({ e164: null, jid: null, lid: null }));
   const logoutWeb = vi.fn(async () => true);
   return {
     ...actual,
@@ -51,6 +56,7 @@ vi.mock("./qr-image.js", () => ({
 
 const createWaSocketMock = vi.mocked(createWaSocket);
 const readWebAuthExistsForDecisionMock = vi.mocked(readWebAuthExistsForDecision);
+const readWebSelfIdMock = vi.mocked(readWebSelfId);
 const waitForWaConnectionMock = vi.mocked(waitForWaConnection);
 const logoutWebMock = vi.mocked(logoutWeb);
 
@@ -62,6 +68,28 @@ async function flushTasks() {
 describe("login-qr", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    createWaSocketMock
+      .mockReset()
+      .mockImplementation(
+        async (
+          _printQr: boolean,
+          _verbose: boolean,
+          opts?: { authDir?: string; onQr?: (qr: string) => void },
+        ) => {
+          const sock = { ws: { close: vi.fn() } };
+          if (opts?.onQr) {
+            setImmediate(() => opts.onQr?.("qr-data"));
+          }
+          return sock as never;
+        },
+      );
+    waitForWaConnectionMock.mockReset();
+    readWebAuthExistsForDecisionMock.mockReset().mockResolvedValue({
+      outcome: "stable",
+      exists: false,
+    });
+    readWebSelfIdMock.mockReset().mockReturnValue({ e164: null, jid: null, lid: null });
+    logoutWebMock.mockReset().mockResolvedValue(true);
   });
 
   it("restarts login once on status 515 and completes", async () => {
@@ -130,5 +158,27 @@ describe("login-qr", () => {
       message: "WhatsApp auth state is still stabilizing. Retry login in a moment.",
     });
     expect(createWaSocketMock).not.toHaveBeenCalled();
+  });
+
+  it("reports a recovered linked session when socket bootstrap restores auth without a QR", async () => {
+    createWaSocketMock.mockImplementationOnce(
+      async (
+        _printQr: boolean,
+        _verbose: boolean,
+        _opts?: { authDir?: string; onQr?: (qr: string) => void },
+      ) =>
+        ({
+          ws: { close: vi.fn() },
+        }) as never,
+    );
+    waitForWaConnectionMock.mockResolvedValueOnce(undefined);
+    readWebSelfIdMock.mockReturnValueOnce({ e164: "+5511977000000", jid: null, lid: null });
+
+    const result = await startWebLoginWithQr({ timeoutMs: 5000 });
+
+    expect(result).toEqual({
+      message: "WhatsApp recovered the existing linked session (+5511977000000).",
+    });
+    expect(createWaSocketMock).toHaveBeenCalledOnce();
   });
 });
