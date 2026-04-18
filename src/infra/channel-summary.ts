@@ -9,6 +9,7 @@ import {
   resolveChannelAccountEnabled,
 } from "../channels/account-summary.js";
 import { listChannelPlugins } from "../channels/plugins/index.js";
+import { formatChannelStatusState } from "../channels/plugins/status-state.js";
 import type { ChannelPlugin } from "../channels/plugins/types.plugin.js";
 import type { ChannelAccountSnapshot } from "../channels/plugins/types.public.js";
 import { inspectReadOnlyChannelAccount } from "../channels/read-only-account-inspect.js";
@@ -199,8 +200,10 @@ export async function buildChannelSummary(
       : undefined;
 
     const summaryRecord = summary;
-    const authState =
-      summaryRecord && typeof summaryRecord.authState === "string" ? summaryRecord.authState : null;
+    const statusState =
+      summaryRecord && typeof summaryRecord.statusState === "string"
+        ? summaryRecord.statusState
+        : null;
     const linked =
       summaryRecord && typeof summaryRecord.linked === "boolean" ? summaryRecord.linked : null;
     const configured =
@@ -210,15 +213,15 @@ export async function buildChannelSummary(
 
     const status = !anyEnabled
       ? "disabled"
-      : authState === "unstable"
-        ? "auth stabilizing"
-      : linked !== null
-        ? linked
-          ? "linked"
-          : "not linked"
-        : configured
-          ? "configured"
-          : "not configured";
+      : statusState
+        ? formatChannelStatusState(statusState)
+        : linked !== null
+          ? linked
+            ? "linked"
+            : "not linked"
+          : configured
+            ? "configured"
+            : "not configured";
 
     const statusColor =
       status === "linked" || status === "configured"

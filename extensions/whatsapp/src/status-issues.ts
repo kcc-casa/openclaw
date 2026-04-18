@@ -11,7 +11,7 @@ import {
 
 type WhatsAppAccountStatus = {
   accountId?: unknown;
-  authState?: unknown;
+  statusState?: unknown;
   enabled?: unknown;
   linked?: unknown;
   connected?: unknown;
@@ -28,7 +28,7 @@ function readWhatsAppAccountStatus(value: ChannelAccountSnapshot): WhatsAppAccou
   }
   return {
     accountId: value.accountId,
-    authState: value.authState,
+    statusState: value.statusState,
     enabled: value.enabled,
     linked: value.linked,
     connected: value.connected,
@@ -48,7 +48,7 @@ export function collectWhatsAppStatusIssues(
     readAccount: readWhatsAppAccountStatus,
     collectIssues: ({ account, accountId, issues }) => {
       const linked = account.linked === true;
-      const authState = asString(account.authState);
+      const statusState = asString(account.statusState);
       const running = account.running === true;
       const connected = account.connected === true;
       const reconnectAttempts =
@@ -58,7 +58,7 @@ export function collectWhatsAppStatusIssues(
       const lastError = asString(account.lastError);
       const healthState = asString(account.healthState);
 
-      if (authState === "unstable") {
+      if (statusState === "unstable") {
         issues.push({
           channel: "whatsapp",
           accountId,

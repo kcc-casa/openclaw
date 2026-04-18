@@ -25,7 +25,7 @@ describe("collectWhatsAppStatusIssues", () => {
       {
         accountId: "default",
         enabled: true,
-        authState: "unstable",
+        statusState: "unstable",
       },
     ]);
 

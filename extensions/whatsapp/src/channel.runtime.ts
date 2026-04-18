@@ -7,6 +7,8 @@ import {
   getWebAuthAgeMs as getWebAuthAgeMsImpl,
   logWebSelfId as logWebSelfIdImpl,
   logoutWeb as logoutWebImpl,
+  readWebAuthSnapshot as readWebAuthSnapshotImpl,
+  readWebAuthState as readWebAuthStateImpl,
   readWebAuthExistsBestEffort as readWebAuthExistsBestEffortImpl,
   readWebAuthExistsForDecision as readWebAuthExistsForDecisionImpl,
   readWebAuthSnapshotBestEffort as readWebAuthSnapshotBestEffortImpl,
@@ -21,6 +23,8 @@ type GetActiveWebListener = typeof import("./active-listener.js").getActiveWebLi
 type GetWebAuthAgeMs = typeof import("./auth-store.js").getWebAuthAgeMs;
 type LogWebSelfId = typeof import("./auth-store.js").logWebSelfId;
 type LogoutWeb = typeof import("./auth-store.js").logoutWeb;
+type ReadWebAuthSnapshot = typeof import("./auth-store.js").readWebAuthSnapshot;
+type ReadWebAuthState = typeof import("./auth-store.js").readWebAuthState;
 type ReadWebAuthExistsBestEffort = typeof import("./auth-store.js").readWebAuthExistsBestEffort;
 type ReadWebAuthExistsForDecision = typeof import("./auth-store.js").readWebAuthExistsForDecision;
 type ReadWebAuthSnapshotBestEffort = typeof import("./auth-store.js").readWebAuthSnapshotBestEffort;
@@ -48,6 +52,18 @@ export function logWebSelfId(...args: Parameters<LogWebSelfId>): ReturnType<LogW
 
 export function logoutWeb(...args: Parameters<LogoutWeb>): ReturnType<LogoutWeb> {
   return logoutWebImpl(...args);
+}
+
+export function readWebAuthSnapshot(
+  ...args: Parameters<ReadWebAuthSnapshot>
+): ReturnType<ReadWebAuthSnapshot> {
+  return readWebAuthSnapshotImpl(...args);
+}
+
+export function readWebAuthState(
+  ...args: Parameters<ReadWebAuthState>
+): ReturnType<ReadWebAuthState> {
+  return readWebAuthStateImpl(...args);
 }
 
 export function readWebAuthExistsBestEffort(

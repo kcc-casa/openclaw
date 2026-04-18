@@ -36,6 +36,8 @@ export {
   logoutWeb,
   logWebSelfId,
   pickWebChannel,
+  readWebAuthSnapshot,
+  readWebAuthState,
   readWebAuthExistsBestEffort,
   readWebAuthExistsForDecision,
   readWebAuthSnapshotBestEffort,
@@ -43,6 +45,7 @@ export {
   readWebSelfId,
   WHATSAPP_AUTH_UNSTABLE_CODE,
   WhatsAppAuthUnstableError,
+  type WhatsAppWebAuthState,
   WA_WEB_AUTH_DIR,
   webAuthExists,
 } from "./auth-store.js";

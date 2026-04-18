@@ -27,7 +27,7 @@ import {
 const hoisted = vi.hoisted(() => ({
   loginWeb: vi.fn(async () => {}),
   pathExists: vi.fn(async () => false),
-  readWebAuthExistsBestEffort: vi.fn(async () => ({ exists: false, timedOut: false })),
+  readWebAuthState: vi.fn(async (): Promise<"linked" | "not-linked" | "unstable"> => "not-linked"),
   readWebAuthExistsForDecision: vi.fn(
     async (): Promise<{ outcome: "stable"; exists: boolean } | { outcome: "unstable" }> => ({
       outcome: "stable",
@@ -94,7 +94,7 @@ vi.mock("./auth-store.js", async () => {
   const actual = await vi.importActual<typeof import("./auth-store.js")>("./auth-store.js");
   return {
     ...actual,
-    readWebAuthExistsBestEffort: hoisted.readWebAuthExistsBestEffort,
+    readWebAuthState: hoisted.readWebAuthState,
     readWebAuthExistsForDecision: hoisted.readWebAuthExistsForDecision,
   };
 });
@@ -149,11 +149,8 @@ describe("whatsapp setup wizard", () => {
     hoisted.loginWeb.mockReset();
     hoisted.pathExists.mockReset();
     hoisted.pathExists.mockResolvedValue(false);
-    hoisted.readWebAuthExistsBestEffort.mockReset();
-    hoisted.readWebAuthExistsBestEffort.mockResolvedValue({
-      exists: false,
-      timedOut: false,
-    });
+    hoisted.readWebAuthState.mockReset();
+    hoisted.readWebAuthState.mockResolvedValue("not-linked");
     hoisted.readWebAuthExistsForDecision.mockReset();
     hoisted.readWebAuthExistsForDecision.mockResolvedValue({
       outcome: "stable",
@@ -458,7 +455,7 @@ describe("whatsapp setup wizard", () => {
   });
 
   it("does not treat unstable auth as configured in generic plugin config checks", async () => {
-    hoisted.readWebAuthExistsForDecision.mockResolvedValueOnce({ outcome: "unstable" as const });
+    hoisted.readWebAuthState.mockResolvedValueOnce("unstable");
 
     await expect(
       whatsappPlugin.config.isConfigured?.(

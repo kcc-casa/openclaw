@@ -20,6 +20,7 @@ export const WHATSAPP_AUTH_UNSTABLE_CODE = "whatsapp-auth-unstable";
 
 const authStoreLogger = getChildLogger({ module: "web-auth-store" });
 const emptyWebSelfId = () => ({ e164: null, jid: null, lid: null }) as const;
+export type WhatsAppWebAuthState = "linked" | "not-linked" | "unstable";
 
 export class WhatsAppAuthUnstableError extends Error {
   readonly code = WHATSAPP_AUTH_UNSTABLE_CODE;
@@ -120,38 +121,86 @@ export async function webAuthExists(authDir: string = resolveDefaultWebAuthDir()
   }
 }
 
-export async function readWebAuthExistsBestEffort(authDir: string = resolveDefaultWebAuthDir()) {
+function resolveWebAuthState(params: {
+  linked: boolean;
+  barrierResult: CredsQueueWaitResult;
+}): WhatsAppWebAuthState {
+  if (params.barrierResult === "timed_out") {
+    return "unstable";
+  }
+  return params.linked ? "linked" : "not-linked";
+}
+
+async function readWebAuthStateCore(
+  authDir: string,
+  context: string,
+): Promise<{ authDir: string; linked: boolean; state: WhatsAppWebAuthState }> {
   const resolvedAuthDir = resolveUserPath(authDir);
-  const result = await waitForWebAuthBarrier(resolvedAuthDir, "readWebAuthExistsBestEffort");
+  const barrierResult = await waitForWebAuthBarrier(resolvedAuthDir, context);
+  const linked = await webAuthExists(resolvedAuthDir);
   return {
-    exists: await webAuthExists(resolvedAuthDir),
-    timedOut: result === "timed_out",
+    authDir: resolvedAuthDir,
+    linked,
+    state: resolveWebAuthState({ linked, barrierResult }),
+  };
+}
+
+export function formatWhatsAppWebAuthStatusState(state: WhatsAppWebAuthState): string {
+  switch (state) {
+    case "linked":
+      return "linked";
+    case "not-linked":
+      return "not linked";
+    case "unstable":
+      return "auth stabilizing";
+  }
+  const exhaustive: never = state;
+  return exhaustive;
+}
+
+export async function readWebAuthState(
+  authDir: string = resolveDefaultWebAuthDir(),
+): Promise<WhatsAppWebAuthState> {
+  return (await readWebAuthStateCore(authDir, "readWebAuthState")).state;
+}
+
+export async function readWebAuthSnapshot(authDir: string = resolveDefaultWebAuthDir()) {
+  const auth = await readWebAuthStateCore(authDir, "readWebAuthSnapshot");
+  return {
+    state: auth.state,
+    authAgeMs: auth.state === "linked" ? getWebAuthAgeMs(auth.authDir) : null,
+    selfId: auth.state === "linked" ? readWebSelfId(auth.authDir) : emptyWebSelfId(),
+  } as const;
+}
+
+export async function readWebAuthExistsBestEffort(authDir: string = resolveDefaultWebAuthDir()) {
+  const state = await readWebAuthState(authDir);
+  return {
+    exists: state === "linked",
+    timedOut: state === "unstable",
   } as const;
 }
 
 export async function readWebAuthExistsForDecision(
   authDir: string = resolveDefaultWebAuthDir(),
 ): Promise<{ outcome: "stable"; exists: boolean } | { outcome: "unstable" }> {
-  const resolvedAuthDir = resolveUserPath(authDir);
-  const result = await waitForWebAuthBarrier(resolvedAuthDir, "readWebAuthExistsForDecision");
-  if (result === "timed_out") {
+  const state = await readWebAuthState(authDir);
+  if (state === "unstable") {
     return { outcome: "unstable" };
   }
   return {
     outcome: "stable",
-    exists: await webAuthExists(resolvedAuthDir),
+    exists: state === "linked",
   };
 }
 
 export async function readWebAuthSnapshotBestEffort(authDir: string = resolveDefaultWebAuthDir()) {
-  const resolvedAuthDir = resolveUserPath(authDir);
-  const result = await waitForWebAuthBarrier(resolvedAuthDir, "readWebAuthSnapshotBestEffort");
-  const linked = await webAuthExists(resolvedAuthDir);
+  const snapshot = await readWebAuthSnapshot(authDir);
   return {
-    linked,
-    timedOut: result === "timed_out",
-    authAgeMs: linked ? getWebAuthAgeMs(resolvedAuthDir) : null,
-    selfId: linked ? readWebSelfId(resolvedAuthDir) : emptyWebSelfId(),
+    linked: snapshot.state === "linked",
+    timedOut: snapshot.state === "unstable",
+    authAgeMs: snapshot.authAgeMs,
+    selfId: snapshot.selfId,
   } as const;
 }
 

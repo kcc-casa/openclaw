@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   logoutWeb,
   pickWebChannel,
+  readWebAuthSnapshot,
+  readWebAuthState,
   webAuthExists,
   WhatsAppAuthUnstableError,
   WHATSAPP_AUTH_UNSTABLE_CODE,
@@ -45,6 +47,41 @@ describe("auth-store", () => {
 
     await expect(webAuthExists(authDir)).resolves.toBe(false);
     expect(fsSync.existsSync(credsPath)).toBe(false);
+  });
+
+  it("reports linked auth state and snapshot from the shared read helper", async () => {
+    const authDir = createTempAuthDir("openclaw-wa-auth-linked");
+    fsSync.writeFileSync(
+      path.join(authDir, "creds.json"),
+      JSON.stringify({ me: { id: "15551234567@s.whatsapp.net" } }),
+      "utf-8",
+    );
+
+    await expect(readWebAuthState(authDir)).resolves.toBe("linked");
+    await expect(readWebAuthSnapshot(authDir)).resolves.toMatchObject({
+      state: "linked",
+      authAgeMs: expect.any(Number),
+      selfId: expect.objectContaining({ e164: "+15551234567" }),
+    });
+  });
+
+  it("reports unstable auth state when the shared barrier read times out", async () => {
+    const authDir = createTempAuthDir("openclaw-wa-auth-unstable-state");
+    fsSync.writeFileSync(
+      path.join(authDir, "creds.json"),
+      JSON.stringify({ me: { id: "15551234567@s.whatsapp.net" } }),
+      "utf-8",
+    );
+    hoisted.waitForCredsSaveQueueWithTimeout
+      .mockResolvedValueOnce("timed_out")
+      .mockResolvedValueOnce("timed_out");
+
+    await expect(readWebAuthState(authDir)).resolves.toBe("unstable");
+    await expect(readWebAuthSnapshot(authDir)).resolves.toEqual({
+      state: "unstable",
+      authAgeMs: null,
+      selfId: { e164: null, jid: null, lid: null },
+    });
   });
 
   it("clears unreadable auth state on explicit logout", async () => {

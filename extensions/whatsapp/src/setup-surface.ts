@@ -5,7 +5,7 @@ import {
   type OpenClawConfig,
 } from "openclaw/plugin-sdk/setup";
 import { listWhatsAppAccountIds, resolveWhatsAppAuthDir } from "./accounts.js";
-import { readWebAuthExistsBestEffort } from "./auth-store.js";
+import { formatWhatsAppWebAuthStatusState, readWebAuthState } from "./auth-store.js";
 import { finalizeWhatsAppSetup } from "./setup-finalize.js";
 
 const channel = "whatsapp" as const;
@@ -17,11 +17,7 @@ async function readWhatsAppSetupLinkState(
   accountId: string,
 ): Promise<WhatsAppSetupLinkState> {
   const { authDir } = resolveWhatsAppAuthDir({ cfg, accountId });
-  const auth = await readWebAuthExistsBestEffort(authDir);
-  if (auth.timedOut) {
-    return "unstable";
-  }
-  return auth.exists ? "linked" : "not-linked";
+  return await readWebAuthState(authDir);
 }
 
 export const whatsappSetupWizard: ChannelSetupWizard = {
@@ -56,12 +52,9 @@ export const whatsappSetupWizard: ChannelSetupWizard = {
       const label = labelAccountId
         ? `WhatsApp (${labelAccountId === DEFAULT_ACCOUNT_ID ? "default" : labelAccountId})`
         : "WhatsApp";
-      const stateLabel =
-        configured === true
-          ? "linked"
-          : linkedAccountId?.state === "unstable"
-            ? "auth stabilizing"
-            : "not linked";
+      const stateLabel = configured
+        ? formatWhatsAppWebAuthStatusState("linked")
+        : formatWhatsAppWebAuthStatusState(linkedAccountId?.state ?? "not-linked");
       return [`${label}: ${stateLabel}`];
     },
   },

@@ -31,9 +31,9 @@ const hoisted = vi.hoisted(() => ({
   ),
   loginWeb: vi.fn(async () => {}),
   pathExists: vi.fn(async () => false),
-  readWebAuthExistsBestEffort: vi.fn<
-    (authDir: string) => Promise<{ exists: boolean; timedOut: boolean }>
-  >(async () => ({ exists: false, timedOut: false })),
+  readWebAuthState: vi.fn<(authDir: string) => Promise<"linked" | "not-linked" | "unstable">>(
+    async () => "not-linked",
+  ),
   resolveWhatsAppAuthDir: vi.fn<
     (params: { cfg: OpenClawConfig; accountId: string }) => { authDir: string }
   >(() => ({
@@ -75,7 +75,7 @@ vi.mock("./auth-store.js", async () => {
   const actual = await vi.importActual<typeof import("./auth-store.js")>("./auth-store.js");
   return {
     ...actual,
-    readWebAuthExistsBestEffort: hoisted.readWebAuthExistsBestEffort,
+    readWebAuthState: hoisted.readWebAuthState,
   };
 });
 
@@ -149,11 +149,8 @@ describe("whatsapp setup wizard", () => {
     hoisted.loginWeb.mockReset();
     hoisted.pathExists.mockReset();
     hoisted.pathExists.mockResolvedValue(false);
-    hoisted.readWebAuthExistsBestEffort.mockReset();
-    hoisted.readWebAuthExistsBestEffort.mockResolvedValue({
-      exists: false,
-      timedOut: false,
-    });
+    hoisted.readWebAuthState.mockReset();
+    hoisted.readWebAuthState.mockResolvedValue("not-linked");
     hoisted.resolveWhatsAppAuthDir.mockReset();
     hoisted.resolveWhatsAppAuthDir.mockReturnValue({ authDir: "/tmp/openclaw-whatsapp-test" });
   });
@@ -224,10 +221,9 @@ describe("whatsapp setup wizard", () => {
     hoisted.resolveWhatsAppAuthDir.mockImplementation(({ accountId }: { accountId: string }) => ({
       authDir: accountId === "work" ? "/tmp/work" : "/tmp/default",
     }));
-    hoisted.readWebAuthExistsBestEffort.mockImplementation(async (authDir: string) => ({
-      exists: authDir === "/tmp/work",
-      timedOut: false,
-    }));
+    hoisted.readWebAuthState.mockImplementation(async (authDir: string) =>
+      authDir === "/tmp/work" ? "linked" : "not-linked",
+    );
 
     const status = await whatsappGetStatus({
       cfg: {
@@ -250,16 +246,13 @@ describe("whatsapp setup wizard", () => {
 
     expect(status.configured).toBe(true);
     expect(status.statusLines).toEqual(["WhatsApp (work): linked"]);
-    expect(hoisted.readWebAuthExistsBestEffort).toHaveBeenCalledWith("/tmp/default");
-    expect(hoisted.readWebAuthExistsBestEffort).toHaveBeenCalledWith("/tmp/work");
+    expect(hoisted.readWebAuthState).toHaveBeenCalledWith("/tmp/default");
+    expect(hoisted.readWebAuthState).toHaveBeenCalledWith("/tmp/work");
   });
 
   it("shows auth stabilizing when auth reads time out", async () => {
     hoisted.resolveWhatsAppAuthDir.mockReturnValue({ authDir: "/tmp/work" });
-    hoisted.readWebAuthExistsBestEffort.mockResolvedValue({
-      exists: false,
-      timedOut: true,
-    });
+    hoisted.readWebAuthState.mockResolvedValue("unstable");
 
     const status = await whatsappGetStatus({
       cfg: {
