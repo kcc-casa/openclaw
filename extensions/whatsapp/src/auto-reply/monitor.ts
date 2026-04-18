@@ -317,24 +317,41 @@ export async function monitorWebChannel(
         if (!isRetryableAuthUnstableError(error)) {
           throw error;
         }
+        const retryDecision = controller.consumeReconnectAttempt();
+        statusController.noteReconnectAttempts(retryDecision.reconnectAttempts);
         statusController.noteClose({
           error: error.message,
-          reconnectAttempts: controller.getReconnectAttempts(),
-          healthState: "reconnecting",
+          reconnectAttempts: retryDecision.reconnectAttempts,
+          healthState: retryDecision.healthState,
         });
+        if (retryDecision.action === "stop") {
+          reconnectLogger.warn(
+            {
+              connectionId,
+              reconnectAttempts: retryDecision.reconnectAttempts,
+              maxAttempts: reconnectPolicy.maxAttempts,
+            },
+            "web reconnect: auth state stayed unstable; max attempts reached",
+          );
+          runtime.error(
+            `WhatsApp auth state is still stabilizing after ${retryDecision.reconnectAttempts}/${reconnectPolicy.maxAttempts} attempts. Stopping web monitoring.`,
+          );
+          await controller.shutdown();
+          break;
+        }
         reconnectLogger.info(
           {
             connectionId,
-            reconnectAttempts: controller.getReconnectAttempts(),
-            delayMs: reconnectPolicy.initialMs,
+            reconnectAttempts: retryDecision.reconnectAttempts,
+            delayMs: retryDecision.delayMs,
           },
           "web reconnect: auth state still stabilizing during inbox attach; retrying",
         );
         runtime.error(
-          `WhatsApp auth state is still stabilizing. Retrying inbox attach in ${formatDurationPrecise(reconnectPolicy.initialMs)}.`,
+          `WhatsApp auth state is still stabilizing. Retry ${retryDecision.reconnectAttempts}/${reconnectPolicy.maxAttempts || "∞"} for inbox attach in ${formatDurationPrecise(retryDecision.delayMs ?? 0)}.`,
         );
         try {
-          await controller.waitBeforeRetry(reconnectPolicy.initialMs);
+          await controller.waitBeforeRetry(retryDecision.delayMs ?? 0);
         } catch {
           break;
         }

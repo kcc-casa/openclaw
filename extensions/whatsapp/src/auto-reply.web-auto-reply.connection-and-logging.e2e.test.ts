@@ -205,7 +205,29 @@ describe("web auto-reply connection", () => {
     await run;
 
     expect(sleep).toHaveBeenCalledWith(expect.any(Number), expect.any(AbortSignal));
-    expect(runtime.error).toHaveBeenCalledWith(expect.stringContaining("Retrying inbox attach"));
+    expect(runtime.error).toHaveBeenCalledWith(expect.stringContaining("inbox attach"));
+  });
+
+  it("stops retrying inbox attach when auth stays unstable past max attempts", async () => {
+    const sleep = vi.fn(async () => {});
+    const listenerFactory = vi.fn(async () => {
+      throw new WhatsAppAuthUnstableError(
+        "WhatsApp auth state is still stabilizing; retrying inbox attach.",
+      );
+    });
+    const { runtime, run } = startWebAutoReplyMonitor({
+      monitorWebChannelFn: monitorWebChannel as never,
+      listenerFactory,
+      sleep,
+      reconnect: { initialMs: 5, maxMs: 5, maxAttempts: 2, factor: 1.1 },
+    });
+
+    await run;
+
+    expect(listenerFactory).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(runtime.error).toHaveBeenCalledWith(expect.stringContaining("Retry 1/2"));
+    expect(runtime.error).toHaveBeenCalledWith(expect.stringContaining("Stopping web monitoring"));
   });
 
   it("forces reconnect when watchdog closes without onClose", async () => {

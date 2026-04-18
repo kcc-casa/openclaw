@@ -72,6 +72,13 @@ export type WhatsAppConnectionCloseDecision = {
   normalized: NormalizedConnectionCloseReason;
 };
 
+export type WhatsAppReconnectAttemptDecision = {
+  action: "stop" | "retry";
+  delayMs?: number;
+  reconnectAttempts: number;
+  healthState: "stopped" | "reconnecting";
+};
+
 function createNeverResolvePromise<T>(): Promise<T> {
   return new Promise<T>(() => {});
 }
@@ -446,6 +453,26 @@ export class WhatsAppConnectionController {
       };
     }
 
+    const retryDecision = this.consumeReconnectAttempt();
+    if (retryDecision.action === "stop") {
+      return {
+        action: "stop",
+        reconnectAttempts: retryDecision.reconnectAttempts,
+        healthState: retryDecision.healthState,
+        normalized,
+      };
+    }
+
+    return {
+      action: "retry",
+      delayMs: retryDecision.delayMs,
+      reconnectAttempts: retryDecision.reconnectAttempts,
+      healthState: retryDecision.healthState,
+      normalized,
+    };
+  }
+
+  consumeReconnectAttempt(): WhatsAppReconnectAttemptDecision {
     this.reconnectAttempts += 1;
     if (
       this.reconnectPolicy.maxAttempts > 0 &&
@@ -455,7 +482,6 @@ export class WhatsAppConnectionController {
         action: "stop",
         reconnectAttempts: this.reconnectAttempts,
         healthState: "stopped",
-        normalized,
       };
     }
 
@@ -464,7 +490,6 @@ export class WhatsAppConnectionController {
       delayMs: computeBackoff(this.reconnectPolicy, this.reconnectAttempts),
       reconnectAttempts: this.reconnectAttempts,
       healthState: "reconnecting",
-      normalized,
     };
   }
 
