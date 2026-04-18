@@ -28,7 +28,7 @@ jobs:
       IMAGE_REPO: cr.home.kcc.casa/openclaw/openclaw
       VAULT_ADDR: https://vault.cluster.kcc.casa
       VAULT_AUTH_PATH: github-actions
-      VAULT_ROLE: homelab-openclaw-images
+      VAULT_ROLE: kcc-casa-openclaw-images
       VAULT_AUDIENCE: https://github.com/kcc-casa
       DOCKER_BUILDKIT: "1"
     steps:
