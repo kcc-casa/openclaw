@@ -1,0 +1,117 @@
+name: homelab-images
+
+on:
+  push:
+    branches:
+      - homelab/main
+    paths:
+      - .github/workflows/homelab-images.yml
+      - Dockerfile
+  workflow_dispatch:
+
+concurrency:
+  group: homelab-images-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-publish:
+    if: ${{ github.ref == 'refs/heads/homelab/main' && (github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')) }}
+    runs-on:
+      - self-hosted
+      - unraid
+      - docker
+      - openclaw-images
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      IMAGE_REPO: cr.home.kcc.casa/openclaw/openclaw
+      VAULT_ADDR: https://vault.cluster.kcc.casa
+      VAULT_AUTH_PATH: github-actions
+      VAULT_ROLE: homelab-openclaw-images
+      VAULT_AUDIENCE: https://github.com/kcc-casa
+      DOCKER_BUILDKIT: "1"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Read registry credentials from Vault
+        id: vault
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          vault_audience_encoded="$(jq -rn --arg value "${VAULT_AUDIENCE}" '$value | @uri')"
+
+          oidc_token="$(
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${vault_audience_encoded}" \
+            | jq -er '.value'
+          )"
+
+          vault_token="$(
+            jq -cn --arg role "${VAULT_ROLE}" --arg jwt "${oidc_token}" '{role: $role, jwt: $jwt}' \
+            | curl --fail --silent --show-error \
+                -H 'Content-Type: application/json' \
+                --data @- \
+                "${VAULT_ADDR}/v1/auth/${VAULT_AUTH_PATH}/login" \
+            | jq -er '.auth.client_token'
+          )"
+
+          registry_auth="$(
+            curl --fail --silent --show-error \
+              -H "X-Vault-Token: ${vault_token}" \
+              "${VAULT_ADDR}/v1/secret/data/unraid/registry/auth"
+          )"
+
+          registry_username="$(printf '%s' "${registry_auth}" | jq -er '.data.data.machine_username')"
+          registry_password="$(printf '%s' "${registry_auth}" | jq -er '.data.data.machine_password')"
+
+          echo "::add-mask::${vault_token}"
+          echo "::add-mask::${registry_username}"
+          echo "::add-mask::${registry_password}"
+
+          {
+            echo "REGISTRY_USERNAME<<EOF"
+            printf '%s\n' "${registry_username}"
+            echo "EOF"
+            echo "REGISTRY_PASSWORD<<EOF"
+            printf '%s\n' "${registry_password}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Log in to registry
+        shell: bash
+        env:
+          REGISTRY_USERNAME: ${{ steps.vault.outputs.REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ steps.vault.outputs.REGISTRY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${REGISTRY_PASSWORD}" | docker login cr.home.kcc.casa --username "${REGISTRY_USERNAME}" --password-stdin
+
+      - name: Compute immutable image tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          short_sha="${GITHUB_SHA::12}"
+          {
+            echo "IMAGE_TAG=homelab-${short_sha}"
+            echo "IMAGE=${IMAGE_REPO}:homelab-${short_sha}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Build and push OpenClaw image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          tags: ${{ env.IMAGE }}
+          provenance: false
+          pull: true
+          push: true
