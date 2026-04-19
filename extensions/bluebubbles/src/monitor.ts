@@ -225,6 +225,16 @@ export async function handleBlueBubblesWebhookRequest(
       const payload = asRecord(parsed.value) ?? {};
       const firstTarget = targets[0];
       if (firstTarget) {
+        const payloadPreview = (() => {
+          try {
+            return JSON.stringify(payload);
+          } catch {
+            return "[unserializable payload]";
+          }
+        })();
+        firstTarget.runtime.log?.(
+          `[bluebubbles] webhook payload path=${path} body=${payloadPreview}`,
+        );
         logVerbose(
           firstTarget.core,
           firstTarget.runtime,
