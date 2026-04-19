@@ -19,7 +19,13 @@ type HostEnvReportedBaseline = {
 
 const INHERITED_ALLOWLIST_RATIONALE: Record<string, string> = {
   ALL_PROXY: "Trusted inherited global proxy route from operator runtime.",
+  AWS_ACCESS_KEY_ID:
+    "Trusted inherited AWS access key from operator-managed runtime secret delivery.",
   AWS_CONFIG_FILE: "Trusted inherited AWS CLI/SDK config path selected by operator.",
+  AWS_SECRET_ACCESS_KEY:
+    "Trusted inherited AWS secret key from operator-managed runtime secret delivery.",
+  AWS_SECURITY_TOKEN: "Trusted inherited legacy AWS session token from operator runtime.",
+  AWS_SESSION_TOKEN: "Trusted inherited AWS session token from operator runtime.",
   AWS_SHARED_CREDENTIALS_FILE:
     "Trusted inherited AWS shared credentials path selected by operator.",
   AWS_WEB_IDENTITY_TOKEN_FILE: "Trusted inherited AWS web identity token path.",
@@ -29,6 +35,9 @@ const INHERITED_ALLOWLIST_RATIONALE: Record<string, string> = {
   DOCKER_CONTEXT: "Trusted inherited Docker context selector from operator runtime.",
   DOCKER_HOST: "Trusted inherited Docker endpoint selected by operator.",
   DOCKER_TLS_VERIFY: "Trusted inherited Docker TLS verification mode.",
+  GH_TOKEN: "Trusted inherited GitHub CLI token from operator-managed runtime secret delivery.",
+  GITHUB_TOKEN: "Trusted inherited GitHub token from operator-managed runtime secret delivery.",
+  GIT_ASKPASS: "Trusted inherited Git askpass helper path selected by operator runtime.",
   GIT_PAGER: "Trusted inherited interactive pager preference.",
   GOOGLE_APPLICATION_CREDENTIALS:
     "Trusted inherited Google application credentials path selected by operator.",

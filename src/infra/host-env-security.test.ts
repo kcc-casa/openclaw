@@ -669,6 +669,33 @@ describe("sanitizeHostExecEnv", () => {
     });
   });
 
+  it("keeps trusted inherited GitHub and AWS auth env helpers", () => {
+    const env = sanitizeHostExecEnv({
+      baseEnv: {
+        PATH: "/usr/bin:/bin",
+        GH_TOKEN: "ghp-gh-token",
+        GITHUB_TOKEN: "ghp-github-token",
+        GIT_ASKPASS: "/usr/local/bin/git-askpass",
+        AWS_ACCESS_KEY_ID: "AKIAEXAMPLE",
+        AWS_SECRET_ACCESS_KEY: "secret-example",
+        AWS_SESSION_TOKEN: "session-example",
+        AWS_SECURITY_TOKEN: "legacy-session-example",
+      },
+    });
+
+    expect(env).toEqual({
+      OPENCLAW_CLI: OPENCLAW_CLI_ENV_VALUE,
+      PATH: "/usr/bin:/bin",
+      GH_TOKEN: "ghp-gh-token",
+      GITHUB_TOKEN: "ghp-github-token",
+      GIT_ASKPASS: "/usr/local/bin/git-askpass",
+      AWS_ACCESS_KEY_ID: "AKIAEXAMPLE",
+      AWS_SECRET_ACCESS_KEY: "secret-example",
+      AWS_SESSION_TOKEN: "session-example",
+      AWS_SECURITY_TOKEN: "legacy-session-example",
+    });
+  });
+
   it("blocks proxy, TLS, and Docker override values explicitly", () => {
     expect(isDangerousHostEnvOverrideVarName("HTTPS_PROXY")).toBe(true);
     expect(isDangerousHostEnvOverrideVarName("https_proxy")).toBe(true);
@@ -1149,6 +1176,43 @@ describe("sanitizeHostExecEnvWithDiagnostics", () => {
     expect(result.env.R_PROFILE_USER).toBeUndefined();
     expect(result.env.XDG_CONFIG_DIRS).toBeUndefined();
     expect(result.env.TF_VAR_admin_cidr).toBeUndefined();
+  });
+
+  it("continues to block GitHub and AWS auth env as untrusted overrides", () => {
+    const result = sanitizeHostExecEnvWithDiagnostics({
+      baseEnv: {
+        PATH: "/usr/bin:/bin",
+      },
+      overrides: {
+        GH_TOKEN: "ghp-gh-token",
+        GITHUB_TOKEN: "ghp-github-token",
+        GIT_ASKPASS: "/tmp/evil-askpass",
+        AWS_ACCESS_KEY_ID: "AKIAEVIL",
+        AWS_SECRET_ACCESS_KEY: "evil-secret",
+        AWS_SESSION_TOKEN: "evil-session",
+        AWS_SECURITY_TOKEN: "evil-legacy-session",
+        SAFE_KEY: "ok",
+      },
+    });
+
+    expect(result.rejectedOverrideBlockedKeys).toEqual([
+      "AWS_ACCESS_KEY_ID",
+      "AWS_SECRET_ACCESS_KEY",
+      "AWS_SECURITY_TOKEN",
+      "AWS_SESSION_TOKEN",
+      "GH_TOKEN",
+      "GIT_ASKPASS",
+      "GITHUB_TOKEN",
+    ]);
+    expect(result.rejectedOverrideInvalidKeys).toEqual([]);
+    expect(result.env.SAFE_KEY).toBe("ok");
+    expect(result.env.GH_TOKEN).toBeUndefined();
+    expect(result.env.GITHUB_TOKEN).toBeUndefined();
+    expect(result.env.GIT_ASKPASS).toBeUndefined();
+    expect(result.env.AWS_ACCESS_KEY_ID).toBeUndefined();
+    expect(result.env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+    expect(result.env.AWS_SESSION_TOKEN).toBeUndefined();
+    expect(result.env.AWS_SECURITY_TOKEN).toBeUndefined();
   });
 
   it("allows Windows-style override names while still rejecting invalid keys", () => {
