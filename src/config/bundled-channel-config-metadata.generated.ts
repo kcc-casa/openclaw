@@ -281,6 +281,79 @@ export const GENERATED_BUNDLED_CHANNEL_CONFIG_METADATA = [
             additionalProperties: false,
           },
         },
+        inboundTriage: {
+          type: "object",
+          properties: {
+            enabled: {
+              type: "boolean",
+            },
+            immediateKeywords: {
+              type: "array",
+              items: {
+                type: "string",
+              },
+            },
+            vipSenderIds: {
+              type: "array",
+              items: {
+                type: "string",
+              },
+            },
+            vipDelayMinutes: {
+              type: "integer",
+              minimum: 0,
+              maximum: 9007199254740991,
+            },
+            unknownSenderDelayMinutes: {
+              type: "integer",
+              minimum: 0,
+              maximum: 9007199254740991,
+            },
+            repeatedSenderImmediate: {
+              type: "object",
+              properties: {
+                enabled: {
+                  type: "boolean",
+                },
+                count: {
+                  type: "integer",
+                  minimum: 1,
+                  maximum: 9007199254740991,
+                },
+                windowMinutes: {
+                  type: "integer",
+                  minimum: 1,
+                  maximum: 9007199254740991,
+                },
+                appliesTo: {
+                  type: "array",
+                  items: {
+                    type: "string",
+                    enum: ["vip", "unknown"],
+                  },
+                },
+              },
+              additionalProperties: false,
+            },
+            suppressOtp: {
+              type: "boolean",
+            },
+            suppressWorkAfterHours: {
+              type: "boolean",
+            },
+            workHoursStart: {
+              type: "integer",
+              minimum: 0,
+              maximum: 23,
+            },
+            workHoursEnd: {
+              type: "integer",
+              minimum: 0,
+              maximum: 23,
+            },
+          },
+          additionalProperties: false,
+        },
         accounts: {
           type: "object",
           properties: {},
@@ -557,6 +630,79 @@ export const GENERATED_BUNDLED_CHANNEL_CONFIG_METADATA = [
                   },
                   additionalProperties: false,
                 },
+              },
+              inboundTriage: {
+                type: "object",
+                properties: {
+                  enabled: {
+                    type: "boolean",
+                  },
+                  immediateKeywords: {
+                    type: "array",
+                    items: {
+                      type: "string",
+                    },
+                  },
+                  vipSenderIds: {
+                    type: "array",
+                    items: {
+                      type: "string",
+                    },
+                  },
+                  vipDelayMinutes: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: 9007199254740991,
+                  },
+                  unknownSenderDelayMinutes: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: 9007199254740991,
+                  },
+                  repeatedSenderImmediate: {
+                    type: "object",
+                    properties: {
+                      enabled: {
+                        type: "boolean",
+                      },
+                      count: {
+                        type: "integer",
+                        minimum: 1,
+                        maximum: 9007199254740991,
+                      },
+                      windowMinutes: {
+                        type: "integer",
+                        minimum: 1,
+                        maximum: 9007199254740991,
+                      },
+                      appliesTo: {
+                        type: "array",
+                        items: {
+                          type: "string",
+                          enum: ["vip", "unknown"],
+                        },
+                      },
+                    },
+                    additionalProperties: false,
+                  },
+                  suppressOtp: {
+                    type: "boolean",
+                  },
+                  suppressWorkAfterHours: {
+                    type: "boolean",
+                  },
+                  workHoursStart: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: 23,
+                  },
+                  workHoursEnd: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: 23,
+                  },
+                },
+                additionalProperties: false,
               },
             },
             required: ["enrichGroupParticipantsFromContacts"],
