@@ -40,6 +40,21 @@ const bluebubblesNetworkSchema = z
   .strict()
   .optional();
 
+const bluebubblesInboundTriageSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    immediateKeywords: z.array(z.string()).optional(),
+    vipSenderIds: z.array(z.string()).optional(),
+    vipDelayMinutes: z.number().int().min(0).optional(),
+    unknownSenderDelayMinutes: z.number().int().min(0).optional(),
+    suppressOtp: z.boolean().optional(),
+    suppressWorkAfterHours: z.boolean().optional(),
+    workHoursStart: z.number().int().min(0).max(23).optional(),
+    workHoursEnd: z.number().int().min(0).max(23).optional(),
+  })
+  .strict()
+  .optional();
+
 const bluebubblesAccountSchema = z
   .object({
     name: z.string().optional(),
@@ -64,6 +79,7 @@ const bluebubblesAccountSchema = z
     network: bluebubblesNetworkSchema,
     blockStreaming: z.boolean().optional(),
     groups: z.object({}).catchall(bluebubblesGroupConfigSchema).optional(),
+    inboundTriage: bluebubblesInboundTriageSchema,
   })
   .superRefine((value, ctx) => {
     const serverUrl = value.serverUrl?.trim() ?? "";

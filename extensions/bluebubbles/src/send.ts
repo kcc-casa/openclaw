@@ -169,6 +169,21 @@ function extractChatIdentifierFromChatGuid(chatGuid: string): string | null {
   return normalizeOptionalString(parts[2]) ?? null;
 }
 
+function extractChatServiceFromChatGuid(chatGuid: string): "imessage" | "sms" | null {
+  const parts = chatGuid.split(";");
+  if (parts.length < 3) {
+    return null;
+  }
+  const service = normalizeLowercaseStringOrEmpty(parts[0] ?? "");
+  if (service === "imessage") {
+    return "imessage";
+  }
+  if (service === "sms") {
+    return "sms";
+  }
+  return null;
+}
+
 function extractParticipantAddresses(chat: BlueBubblesChatRecord): string[] {
   const raw =
     (Array.isArray(chat.participants) ? chat.participants : null) ??
@@ -246,11 +261,14 @@ export async function resolveChatGuidForTarget(params: {
 
   const normalizedHandle =
     params.target.kind === "handle" ? normalizeBlueBubblesHandle(params.target.address) : "";
+  const targetService =
+    params.target.kind === "handle" ? (params.target.service ?? "auto") : "auto";
   const targetChatId = params.target.kind === "chat_id" ? params.target.chatId : null;
   const targetChatIdentifier =
     params.target.kind === "chat_identifier" ? params.target.chatIdentifier : null;
 
   const limit = 500;
+  let fallbackDirectMatch: string | null = null;
   let participantMatch: string | null = null;
   for (let offset = 0; offset < 5000; offset += limit) {
     const chats = await queryChats({
@@ -302,8 +320,30 @@ export async function resolveChatGuidForTarget(params: {
       if (normalizedHandle) {
         const guid = extractChatGuid(chat);
         const directHandle = guid ? extractHandleFromChatGuid(guid) : null;
-        if (directHandle && directHandle === normalizedHandle) {
-          return guid;
+        if (guid && directHandle && directHandle === normalizedHandle) {
+          const service = extractChatServiceFromChatGuid(guid);
+          if (targetService === "imessage") {
+            if (service === "imessage") {
+              return guid;
+            }
+            if (!fallbackDirectMatch) {
+              fallbackDirectMatch = guid;
+            }
+          } else if (targetService === "sms") {
+            if (service === "sms") {
+              return guid;
+            }
+            if (!fallbackDirectMatch) {
+              fallbackDirectMatch = guid;
+            }
+          } else {
+            if (service === "imessage") {
+              return guid;
+            }
+            if (!fallbackDirectMatch) {
+              fallbackDirectMatch = guid;
+            }
+          }
         }
         if (!participantMatch && guid) {
           // Only consider DM chats (`;-;` separator) as participant matches.
@@ -322,7 +362,7 @@ export async function resolveChatGuidForTarget(params: {
       }
     }
   }
-  return participantMatch;
+  return fallbackDirectMatch ?? participantMatch;
 }
 
 /**

@@ -215,6 +215,86 @@ describe("send", () => {
       expect(result).toBe("iMessage;-;+15551234567");
     });
 
+    it("prefers an iMessage DM over an SMS DM for auto service", async () => {
+      const result = await resolveHandleTargetGuid([
+        {
+          guid: "SMS;-;+15551234567",
+          participants: [{ address: "+15551234567" }],
+        },
+        {
+          guid: "iMessage;-;+15551234567",
+          participants: [{ address: "+15551234567" }],
+        },
+      ]);
+
+      expect(result).toBe("iMessage;-;+15551234567");
+    });
+
+    it("prefers an explicit SMS DM when the target service is sms", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            data: [
+              {
+                guid: "iMessage;-;+15551234567",
+                participants: [{ address: "+15551234567" }],
+              },
+              {
+                guid: "SMS;-;+15551234567",
+                participants: [{ address: "+15551234567" }],
+              },
+            ],
+          }),
+      });
+
+      const target: BlueBubblesSendTarget = {
+        kind: "handle",
+        address: "+15551234567",
+        service: "sms",
+      };
+      const result = await resolveChatGuidForTarget({
+        baseUrl: "http://localhost:1234",
+        password: "test",
+        target,
+      });
+
+      expect(result).toBe("SMS;-;+15551234567");
+    });
+
+    it("falls back to SMS when iMessage is requested but only SMS exists", async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              data: [
+                {
+                  guid: "SMS;-;+15551234567",
+                  participants: [{ address: "+15551234567" }],
+                },
+              ],
+            }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ data: [] }),
+        });
+
+      const target: BlueBubblesSendTarget = {
+        kind: "handle",
+        address: "+15551234567",
+        service: "imessage",
+      };
+      const result = await resolveChatGuidForTarget({
+        baseUrl: "http://localhost:1234",
+        password: "test",
+        target,
+      });
+
+      expect(result).toBe("SMS;-;+15551234567");
+    });
+
     it("returns null when handle only exists in group chat (not DM)", async () => {
       // This is the critical fix: if a phone number only exists as a participant in a group chat
       // (no direct DM chat), we should NOT send to that group. Return null instead.

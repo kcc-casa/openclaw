@@ -72,12 +72,29 @@ import {
   isAllowedBlueBubblesSender,
   normalizeBlueBubblesHandle,
 } from "./targets.js";
+import type { BlueBubblesAccountConfig } from "./types.js";
 import { blueBubblesFetchWithTimeout, buildBlueBubblesApiUrl } from "./types.js";
 
 const DEFAULT_TEXT_LIMIT = 4000;
 const invalidAckReactions = new Set<string>();
 const REPLY_DIRECTIVE_TAG_RE = /\[\[\s*(?:reply_to_current|reply_to\s*:\s*[^\]\n]+)\s*\]\]/gi;
 const PENDING_OUTBOUND_MESSAGE_ID_TTL_MS = 2 * 60 * 1000;
+const DEFAULT_TRIAGE_IMMEDIATE_KEYWORDS = [
+  "urgent",
+  "emergency",
+  "asap",
+  "call me",
+  "hospital",
+  "accident",
+  "school",
+  "pick up",
+  "pickup",
+  "now",
+  "where are you",
+] as const;
+const OTP_RE = /\b(?:otp|2fa|verification code|security code|one-time code|passcode)\b/i;
+const WORK_HINT_RE = /\b(?:work|office|meeting|deploy|deployment|incident|pager|on-call|oncall)\b/i;
+const DELAYED_TRIAGE_NOTIFICATIONS_MAX = 1000;
 
 type PendingOutboundMessageId = {
   id: number;
@@ -351,6 +368,258 @@ export function logVerbose(
   if (core.logging.shouldLogVerbose()) {
     runtime.log?.(`[bluebubbles] ${message}`);
   }
+}
+
+type BlueBubblesTriageDecision =
+  | { kind: "reply" }
+  | { kind: "ignore"; reason: string }
+  | { kind: "notify"; text: string; priority: "immediate" }
+  | {
+      kind: "notify_delayed";
+      text: string;
+      delayMinutes: number;
+      senderId: string;
+      accountId: string;
+      peerKey: string;
+      sessionKey: string;
+      contextKey: string;
+    };
+
+type PendingDelayedTriageNotification = {
+  accountId: string;
+  peerKey: string;
+  senderId: string;
+  sessionKey: string;
+  scheduledAt: number;
+  dueAt: number;
+  contextKey: string;
+  text: string;
+  timer: NodeJS.Timeout;
+};
+
+const pendingDelayedTriageNotifications = new Map<string, PendingDelayedTriageNotification>();
+
+function formatTriageSenderLabel(message: NormalizedWebhookMessage): string {
+  const senderName = normalizeOptionalString(message.senderName);
+  if (senderName) {
+    return `${senderName} (${message.senderId})`;
+  }
+  return message.senderId;
+}
+
+function formatTriageConversationLabel(params: {
+  message: NormalizedWebhookMessage;
+  isGroup: boolean;
+}): string {
+  if (params.isGroup) {
+    return (
+      normalizeOptionalString(params.message.chatName) ??
+      params.message.chatGuid ??
+      params.message.chatIdentifier ??
+      (typeof params.message.chatId === "number" ? String(params.message.chatId) : "group")
+    );
+  }
+  return formatTriageSenderLabel(params.message);
+}
+
+function buildBlueBubblesTriageNotification(params: {
+  message: NormalizedWebhookMessage;
+  rawBody: string;
+  isGroup: boolean;
+  priority: "immediate" | "delayed";
+  reason: string;
+  delayMinutes?: number;
+}): string {
+  const sender = formatTriageSenderLabel(params.message);
+  const conversation = formatTriageConversationLabel({
+    message: params.message,
+    isGroup: params.isGroup,
+  });
+  const bodyPreview =
+    params.rawBody.length > 160 ? `${params.rawBody.slice(0, 160)}…` : params.rawBody;
+  const delayText =
+    params.priority === "delayed" && typeof params.delayMinutes === "number"
+      ? ` after ${params.delayMinutes}m hold`
+      : "";
+  return `[bluebubbles triage] ${params.priority}${delayText}: ${sender} in ${conversation} (${params.reason}) — ${bodyPreview}`;
+}
+
+function buildDelayedTriageKey(params: {
+  accountId: string;
+  peerKey: string;
+  senderId: string;
+}): string {
+  return `${params.accountId}:${params.peerKey}:${params.senderId}`;
+}
+
+function pruneDelayedTriageNotifications(): void {
+  if (pendingDelayedTriageNotifications.size <= DELAYED_TRIAGE_NOTIFICATIONS_MAX) {
+    return;
+  }
+  const entries = [...pendingDelayedTriageNotifications.entries()].toSorted(
+    (left, right) => left[1].scheduledAt - right[1].scheduledAt,
+  );
+  const removeCount = pendingDelayedTriageNotifications.size - DELAYED_TRIAGE_NOTIFICATIONS_MAX;
+  for (let i = 0; i < removeCount; i++) {
+    const [key, entry] = entries[i] ?? [];
+    if (!key || !entry) {
+      continue;
+    }
+    clearTimeout(entry.timer);
+    pendingDelayedTriageNotifications.delete(key);
+  }
+}
+
+function cancelDelayedTriageNotificationByKey(key: string): void {
+  const entry = pendingDelayedTriageNotifications.get(key);
+  if (!entry) {
+    return;
+  }
+  clearTimeout(entry.timer);
+  pendingDelayedTriageNotifications.delete(key);
+}
+
+function cancelDelayedTriageNotification(params: {
+  accountId: string;
+  peerKey: string;
+  senderId: string;
+}): void {
+  cancelDelayedTriageNotificationByKey(buildDelayedTriageKey(params));
+}
+
+function scheduleDelayedTriageNotification(params: {
+  accountId: string;
+  peerKey: string;
+  senderId: string;
+  sessionKey: string;
+  delayMinutes: number;
+  contextKey: string;
+  text: string;
+  enqueue: (text: string, opts: { sessionKey: string; contextKey: string }) => void;
+}): void {
+  const key = buildDelayedTriageKey({
+    accountId: params.accountId,
+    peerKey: params.peerKey,
+    senderId: params.senderId,
+  });
+  cancelDelayedTriageNotificationByKey(key);
+  const scheduledAt = Date.now();
+  const dueAt = scheduledAt + params.delayMinutes * 60 * 1000;
+  const timer = setTimeout(
+    () => {
+      pendingDelayedTriageNotifications.delete(key);
+      params.enqueue(params.text, {
+        sessionKey: params.sessionKey,
+        contextKey: params.contextKey,
+      });
+    },
+    Math.max(dueAt - scheduledAt, 0),
+  );
+  pendingDelayedTriageNotifications.set(key, {
+    accountId: params.accountId,
+    peerKey: params.peerKey,
+    senderId: params.senderId,
+    sessionKey: params.sessionKey,
+    scheduledAt,
+    dueAt,
+    contextKey: params.contextKey,
+    text: params.text,
+    timer,
+  });
+  pruneDelayedTriageNotifications();
+}
+
+function resolveBlueBubblesTriageDecision(params: {
+  message: NormalizedWebhookMessage;
+  rawBody: string;
+  isGroup: boolean;
+  triage: NonNullable<BlueBubblesAccountConfig["inboundTriage"]>;
+  accountId: string;
+  peerKey: string;
+  sessionKey: string;
+}): BlueBubblesTriageDecision {
+  const body = normalizeOptionalLowercaseString(params.rawBody) ?? "";
+  if (!body) {
+    return { kind: "ignore", reason: "empty" };
+  }
+
+  if (params.triage.suppressOtp !== false && OTP_RE.test(body)) {
+    return { kind: "ignore", reason: "otp" };
+  }
+
+  const immediateKeywords = params.triage.immediateKeywords?.filter((entry) => entry.trim()) ?? [
+    ...DEFAULT_TRIAGE_IMMEDIATE_KEYWORDS,
+  ];
+  if (immediateKeywords.some((entry) => body.includes(entry.trim().toLowerCase()))) {
+    return {
+      kind: "notify",
+      priority: "immediate",
+      text: buildBlueBubblesTriageNotification({
+        message: params.message,
+        rawBody: params.rawBody,
+        isGroup: params.isGroup,
+        priority: "immediate",
+        reason: "keyword",
+      }),
+    };
+  }
+
+  if (params.triage.suppressWorkAfterHours) {
+    const timestamp = params.message.timestamp ?? Date.now();
+    const hour = new Date(timestamp).getHours();
+    const workHoursStart = params.triage.workHoursStart ?? 9;
+    const workHoursEnd = params.triage.workHoursEnd ?? 17;
+    const inHours = hour >= workHoursStart && hour < workHoursEnd;
+    if (!inHours && WORK_HINT_RE.test(body)) {
+      return { kind: "ignore", reason: "work-after-hours" };
+    }
+  }
+
+  const vipSenderIds = new Set(
+    (params.triage.vipSenderIds ?? [])
+      .map((entry) => normalizeBlueBubblesHandle(entry))
+      .filter(Boolean),
+  );
+  const normalizedSender = normalizeBlueBubblesHandle(params.message.senderId);
+  if (normalizedSender && vipSenderIds.has(normalizedSender)) {
+    const delayMinutes = params.triage.vipDelayMinutes ?? 5;
+    return {
+      kind: "notify_delayed",
+      delayMinutes,
+      senderId: params.message.senderId,
+      accountId: params.accountId,
+      peerKey: params.peerKey,
+      sessionKey: params.sessionKey,
+      contextKey: `bluebubbles:triage:${params.accountId}:${params.message.messageId ?? params.message.timestamp ?? Date.now()}`,
+      text: buildBlueBubblesTriageNotification({
+        message: params.message,
+        rawBody: params.rawBody,
+        isGroup: params.isGroup,
+        priority: "delayed",
+        reason: "vip",
+        delayMinutes,
+      }),
+    };
+  }
+
+  const unknownDelayMinutes = params.triage.unknownSenderDelayMinutes ?? 5;
+  return {
+    kind: "notify_delayed",
+    delayMinutes: unknownDelayMinutes,
+    senderId: params.message.senderId,
+    accountId: params.accountId,
+    peerKey: params.peerKey,
+    sessionKey: params.sessionKey,
+    contextKey: `bluebubbles:triage:${params.accountId}:${params.message.messageId ?? params.message.timestamp ?? Date.now()}`,
+    text: buildBlueBubblesTriageNotification({
+      message: params.message,
+      rawBody: params.rawBody,
+      isGroup: params.isGroup,
+      priority: "delayed",
+      reason: "default",
+      delayMinutes: unknownDelayMinutes,
+    }),
+  };
 }
 
 function logGroupAllowlistHint(params: {
@@ -654,6 +923,14 @@ export async function processMessage(
   };
 
   if (message.fromMe) {
+    cancelDelayedTriageNotification({
+      accountId: account.accountId,
+      peerKey:
+        message.chatGuid ??
+        message.chatIdentifier ??
+        (message.chatId ? String(message.chatId) : message.senderId),
+      senderId: message.senderId,
+    });
     // Cache from-me messages so reply context can resolve sender/body.
     cacheInboundMessage();
     const confirmedAssistantOutbound =
@@ -727,6 +1004,8 @@ export async function processMessage(
   });
   const effectiveAllowFrom = accessDecision.effectiveAllowFrom;
   const effectiveGroupAllowFrom = accessDecision.effectiveGroupAllowFrom;
+  const triageConfig = account.config.inboundTriage;
+  const triageEnabled = triageConfig?.enabled === true;
   const groupAllowEntry = formatGroupAllowlistEntry({
     chatGuid: message.chatGuid,
     chatId: message.chatId ?? undefined,
@@ -1367,6 +1646,56 @@ export async function processMessage(
   }
   const commandBody = messageText.trim();
 
+  if (triageEnabled) {
+    const triageDecision = resolveBlueBubblesTriageDecision({
+      message,
+      rawBody,
+      isGroup,
+      triage: triageConfig,
+      accountId: account.accountId,
+      peerKey: peerId,
+      sessionKey: route.sessionKey,
+    });
+    if (triageDecision.kind === "ignore") {
+      logVerbose(
+        core,
+        runtime,
+        `triage ignore sender=${message.senderId} reason=${triageDecision.reason}`,
+      );
+      return;
+    }
+    if (triageDecision.kind === "notify") {
+      core.system.enqueueSystemEvent(triageDecision.text, {
+        sessionKey: route.sessionKey,
+        contextKey: `bluebubbles:triage:${account.accountId}:${message.messageId ?? message.timestamp ?? Date.now()}`,
+      });
+      logVerbose(
+        core,
+        runtime,
+        `triage notify sender=${message.senderId} priority=${triageDecision.priority}`,
+      );
+      return;
+    }
+    if (triageDecision.kind === "notify_delayed") {
+      scheduleDelayedTriageNotification({
+        accountId: triageDecision.accountId,
+        peerKey: triageDecision.peerKey,
+        senderId: triageDecision.senderId,
+        sessionKey: triageDecision.sessionKey,
+        delayMinutes: triageDecision.delayMinutes,
+        contextKey: triageDecision.contextKey,
+        text: triageDecision.text,
+        enqueue: (text, opts) => core.system.enqueueSystemEvent(text, opts),
+      });
+      logVerbose(
+        core,
+        runtime,
+        `triage scheduled sender=${message.senderId} delay_minutes=${triageDecision.delayMinutes}`,
+      );
+      return;
+    }
+  }
+
   const ctxPayload = core.channel.reply.finalizeInboundContext({
     Body: body,
     BodyForAgent: rawBody,
@@ -1665,6 +1994,14 @@ export async function processReaction(
     accountId: account.accountId,
   });
   if (reaction.fromMe) {
+    cancelDelayedTriageNotification({
+      accountId: account.accountId,
+      peerKey:
+        reaction.chatGuid ??
+        reaction.chatIdentifier ??
+        (reaction.chatId ? String(reaction.chatId) : reaction.senderId),
+      senderId: reaction.senderId,
+    });
     return;
   }
 
