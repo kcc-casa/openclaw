@@ -41,6 +41,17 @@ export type BlueBubblesInboundTriageConfig = {
   vipDelayMinutes?: number;
   /** Delay notifications for unknown senders before surfacing them. */
   unknownSenderDelayMinutes?: number;
+  /** Optional repeated-sender immediate escalation rules. */
+  repeatedSenderImmediate?: {
+    /** Enable repeated-sender immediate escalation. */
+    enabled?: boolean;
+    /** Trigger immediate escalation when this many messages arrive within the window. */
+    count?: number;
+    /** Rolling window, in minutes, used to count repeated inbound messages. */
+    windowMinutes?: number;
+    /** Which sender classes repeated escalation applies to. */
+    appliesTo?: Array<"vip" | "unknown">;
+  };
   /** Suppress obvious OTP / 2FA code traffic from notification surfacing. */
   suppressOtp?: boolean;
   /** Suppress after-hours work-message notifications unless another higher-priority rule fires. */

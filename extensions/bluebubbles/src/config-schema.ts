@@ -47,6 +47,15 @@ const bluebubblesInboundTriageSchema = z
     vipSenderIds: z.array(z.string()).optional(),
     vipDelayMinutes: z.number().int().min(0).optional(),
     unknownSenderDelayMinutes: z.number().int().min(0).optional(),
+    repeatedSenderImmediate: z
+      .object({
+        enabled: z.boolean().optional(),
+        count: z.number().int().min(1).optional(),
+        windowMinutes: z.number().int().min(1).optional(),
+        appliesTo: z.array(z.enum(["vip", "unknown"])).optional(),
+      })
+      .strict()
+      .optional(),
     suppressOtp: z.boolean().optional(),
     suppressWorkAfterHours: z.boolean().optional(),
     workHoursStart: z.number().int().min(0).max(23).optional(),

@@ -217,6 +217,60 @@ Per-group configuration:
 - Uses `allowFrom` and `groupAllowFrom` to determine command authorization.
 - Authorized senders can run control commands even without mentioning in groups.
 
+## Inbound triage mode
+
+BlueBubbles can optionally treat inbound messages as triage events instead of immediately dispatching them to the agent for an auto-reply.
+
+When `inboundTriage.enabled` is `true`:
+
+- normal reply dispatch is suppressed
+- immediate keyword matches generate immediate system events
+- VIP and unknown senders can be held for delayed notification
+- repeated senders can escalate to immediate notification when configured
+- OTP-style messages can be suppressed
+- after-hours work-message traffic can be suppressed
+
+Example:
+
+```json5
+{
+  channels: {
+    bluebubbles: {
+      inboundTriage: {
+        enabled: true,
+        immediateKeywords: ["school", "urgent", "pickup"],
+        vipSenderIds: ["+15551234567"],
+        vipDelayMinutes: 5,
+        unknownSenderDelayMinutes: 10,
+        repeatedSenderImmediate: {
+          enabled: true,
+          count: 3,
+          windowMinutes: 10,
+          appliesTo: ["vip", "unknown"],
+        },
+        suppressOtp: true,
+        suppressWorkAfterHours: true,
+        workHoursStart: 9,
+        workHoursEnd: 17,
+      },
+    },
+  },
+}
+```
+
+`repeatedSenderImmediate` fields:
+
+- `enabled`: turns repeated-sender escalation on
+- `count`: number of inbound messages required before immediate escalation
+- `windowMinutes`: rolling window used to count repeated inbound messages
+- `appliesTo`: sender classes that should escalate, any of `"vip"` or `"unknown"`
+
+Current caveat:
+
+- delayed triage holdbacks are currently implemented with in-memory timers
+- they are best-effort within a running process, but they do not survive process restarts or reloads
+- if you need stronger delivery guarantees, use immediate escalation rules or move the delayed path to a durable scheduler
+
 ## ACP conversation bindings
 
 BlueBubbles chats can be turned into durable ACP workspaces without changing the transport layer.

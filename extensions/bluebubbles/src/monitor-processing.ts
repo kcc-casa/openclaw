@@ -397,7 +397,21 @@ type PendingDelayedTriageNotification = {
   timer: NodeJS.Timeout;
 };
 
+type RepeatedSenderTriageEntry = {
+  timestamps: number[];
+};
+
 const pendingDelayedTriageNotifications = new Map<string, PendingDelayedTriageNotification>();
+const repeatedSenderTriageState = new Map<string, RepeatedSenderTriageEntry>();
+const REPEATED_SENDER_TRIAGE_MAX = 1000;
+
+export function resetBlueBubblesTriageStateForTest(): void {
+  for (const entry of pendingDelayedTriageNotifications.values()) {
+    clearTimeout(entry.timer);
+  }
+  pendingDelayedTriageNotifications.clear();
+  repeatedSenderTriageState.clear();
+}
 
 function formatTriageSenderLabel(message: NormalizedWebhookMessage): string {
   const senderName = normalizeOptionalString(message.senderName);
@@ -485,6 +499,47 @@ function cancelDelayedTriageNotification(params: {
   senderId: string;
 }): void {
   cancelDelayedTriageNotificationByKey(buildDelayedTriageKey(params));
+}
+
+function pruneRepeatedSenderTriageState(): void {
+  if (repeatedSenderTriageState.size <= REPEATED_SENDER_TRIAGE_MAX) {
+    return;
+  }
+  const entries = [...repeatedSenderTriageState.entries()].toSorted((left, right) => {
+    const leftLatest = left[1].timestamps[left[1].timestamps.length - 1] ?? 0;
+    const rightLatest = right[1].timestamps[right[1].timestamps.length - 1] ?? 0;
+    return leftLatest - rightLatest;
+  });
+  const removeCount = repeatedSenderTriageState.size - REPEATED_SENDER_TRIAGE_MAX;
+  for (let i = 0; i < removeCount; i++) {
+    const [key] = entries[i] ?? [];
+    if (!key) {
+      continue;
+    }
+    repeatedSenderTriageState.delete(key);
+  }
+}
+
+function recordRepeatedSenderTimestamps(params: {
+  accountId: string;
+  peerKey: string;
+  senderId: string;
+  nowMs: number;
+  windowMinutes: number;
+}): number {
+  const key = buildDelayedTriageKey({
+    accountId: params.accountId,
+    peerKey: params.peerKey,
+    senderId: params.senderId,
+  });
+  const windowMs = params.windowMinutes * 60 * 1000;
+  const cutoff = params.nowMs - windowMs;
+  const current = repeatedSenderTriageState.get(key)?.timestamps ?? [];
+  const timestamps = current.filter((timestamp) => timestamp >= cutoff);
+  timestamps.push(params.nowMs);
+  repeatedSenderTriageState.set(key, { timestamps });
+  pruneRepeatedSenderTriageState();
+  return timestamps.length;
 }
 
 function scheduleDelayedTriageNotification(params: {
@@ -581,7 +636,50 @@ function resolveBlueBubblesTriageDecision(params: {
       .filter(Boolean),
   );
   const normalizedSender = normalizeBlueBubblesHandle(params.message.senderId);
-  if (normalizedSender && vipSenderIds.has(normalizedSender)) {
+  const senderClass = normalizedSender && vipSenderIds.has(normalizedSender) ? "vip" : "unknown";
+  const repeatedSenderImmediate = params.triage.repeatedSenderImmediate;
+  const repeatEnabled = repeatedSenderImmediate?.enabled ?? false;
+  const repeatCountThreshold = repeatedSenderImmediate?.count ?? 3;
+  const repeatWindowMinutes = repeatedSenderImmediate?.windowMinutes ?? 10;
+  const repeatAppliesTo = new Set(repeatedSenderImmediate?.appliesTo ?? ["vip", "unknown"]);
+  const nowMs = params.message.timestamp ?? Date.now();
+
+  if (repeatEnabled && repeatAppliesTo.has(senderClass)) {
+    const repeatedCount = recordRepeatedSenderTimestamps({
+      accountId: params.accountId,
+      peerKey: params.peerKey,
+      senderId: params.message.senderId,
+      nowMs,
+      windowMinutes: repeatWindowMinutes,
+    });
+    if (repeatedCount >= repeatCountThreshold) {
+      cancelDelayedTriageNotification({
+        accountId: params.accountId,
+        peerKey: params.peerKey,
+        senderId: params.message.senderId,
+      });
+      repeatedSenderTriageState.delete(
+        buildDelayedTriageKey({
+          accountId: params.accountId,
+          peerKey: params.peerKey,
+          senderId: params.message.senderId,
+        }),
+      );
+      return {
+        kind: "notify",
+        priority: "immediate",
+        text: buildBlueBubblesTriageNotification({
+          message: params.message,
+          rawBody: params.rawBody,
+          isGroup: params.isGroup,
+          priority: "immediate",
+          reason: `repeat-${senderClass}`,
+        }),
+      };
+    }
+  }
+
+  if (senderClass === "vip") {
     const delayMinutes = params.triage.vipDelayMinutes ?? 5;
     return {
       kind: "notify_delayed",

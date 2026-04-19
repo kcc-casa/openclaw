@@ -3,6 +3,7 @@ import type { ResolvedBlueBubblesAccount } from "./accounts.js";
 import { fetchBlueBubblesHistory } from "./history.js";
 import { createBlueBubblesDebounceRegistry } from "./monitor-debounce.js";
 import type { NormalizedWebhookMessage } from "./monitor-normalize.js";
+import { resetBlueBubblesTriageStateForTest } from "./monitor-processing.js";
 import { resetBlueBubblesSelfChatCache } from "./monitor-self-chat-cache.js";
 import { resolveBlueBubblesMessageId } from "./monitor.js";
 import {
@@ -273,6 +274,7 @@ describe("BlueBubbles webhook monitor", () => {
       buildMentionRegexesMock: mockBuildMentionRegexes,
       extraReset: () => {
         resetBlueBubblesSelfChatCache();
+        resetBlueBubblesTriageStateForTest();
         resetBlueBubblesParticipantContactNameCacheForTest();
         setBlueBubblesParticipantContactDepsForTest();
       },
@@ -753,6 +755,350 @@ describe("BlueBubbles webhook monitor", () => {
           );
         },
         { timeout: 400, interval: 10 },
+      );
+    });
+
+    it("does not immediately notify just because the same VIP sender sends multiple messages", async () => {
+      mockEnqueueSystemEvent.mockClear();
+      setupWebhookTarget({
+        account: createMockAccount({
+          inboundTriage: {
+            enabled: true,
+            vipSenderIds: ["+15551234567"],
+            vipDelayMinutes: 0.002,
+          },
+        }),
+      });
+
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-vip-repeat-1",
+          senderId: "+15551234567",
+          senderName: "Fiona",
+          text: "first note",
+        }),
+      );
+
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-vip-repeat-2",
+          senderId: "+15551234567",
+          senderName: "Fiona",
+          text: "second note",
+        }),
+      );
+
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-vip-repeat-3",
+          senderId: "+15551234567",
+          senderName: "Fiona",
+          text: "third note",
+        }),
+      );
+
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-vip-repeat-4",
+          senderId: "+15551234567",
+          senderName: "Fiona",
+          text: "fourth note",
+        }),
+      );
+
+      expect(mockDispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
+      expect(mockEnqueueSystemEvent).not.toHaveBeenCalled();
+
+      await vi.waitFor(
+        () => {
+          expect(mockEnqueueSystemEvent).toHaveBeenCalledTimes(1);
+          expect(mockEnqueueSystemEvent).toHaveBeenCalledWith(
+            expect.stringContaining("fourth note"),
+            expect.any(Object),
+          );
+        },
+        { timeout: 400, interval: 10 },
+      );
+    });
+
+    it("does not escalate repeated VIP sender messages after only two messages", async () => {
+      mockEnqueueSystemEvent.mockClear();
+      setupWebhookTarget({
+        account: createMockAccount({
+          inboundTriage: {
+            enabled: true,
+            vipSenderIds: ["+15551234567"],
+            vipDelayMinutes: 5,
+            repeatedSenderImmediate: {
+              enabled: true,
+              count: 3,
+              windowMinutes: 10,
+              appliesTo: ["vip", "unknown"],
+            },
+          },
+        }),
+      });
+
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-vip-threshold-1",
+          senderId: "+15551234567",
+          senderName: "Fiona",
+          text: "one",
+        }),
+      );
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-vip-threshold-2",
+          senderId: "+15551234567",
+          senderName: "Fiona",
+          text: "two",
+        }),
+      );
+
+      expect(mockDispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
+      expect(mockEnqueueSystemEvent).not.toHaveBeenCalled();
+    });
+
+    it("does not escalate repeated unknown sender messages after only two messages", async () => {
+      mockEnqueueSystemEvent.mockClear();
+      setupWebhookTarget({
+        account: createMockAccount({
+          inboundTriage: {
+            enabled: true,
+            unknownSenderDelayMinutes: 5,
+            repeatedSenderImmediate: {
+              enabled: true,
+              count: 3,
+              windowMinutes: 10,
+              appliesTo: ["vip", "unknown"],
+            },
+          },
+          allowFrom: ["+15557654321"],
+        }),
+      });
+
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-unknown-threshold-1",
+          senderId: "+15557654321",
+          senderName: "Alex",
+          text: "one",
+        }),
+      );
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-unknown-threshold-2",
+          senderId: "+15557654321",
+          senderName: "Alex",
+          text: "two",
+        }),
+      );
+
+      expect(mockDispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
+      expect(mockEnqueueSystemEvent).not.toHaveBeenCalled();
+    });
+
+    it("should escalate repeated VIP sender messages immediately after three messages in a short window", async () => {
+      mockEnqueueSystemEvent.mockClear();
+      setupWebhookTarget({
+        account: createMockAccount({
+          inboundTriage: {
+            enabled: true,
+            vipSenderIds: ["+15551234567"],
+            vipDelayMinutes: 5,
+            repeatedSenderImmediate: {
+              enabled: true,
+              count: 3,
+              windowMinutes: 10,
+              appliesTo: ["vip", "unknown"],
+            },
+          },
+        }),
+      });
+
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-vip-imm-1",
+          senderId: "+15551234567",
+          senderName: "Fiona",
+          text: "one",
+        }),
+      );
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-vip-imm-2",
+          senderId: "+15551234567",
+          senderName: "Fiona",
+          text: "two",
+        }),
+      );
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-vip-imm-3",
+          senderId: "+15551234567",
+          senderName: "Fiona",
+          text: "three",
+        }),
+      );
+
+      expect(mockDispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
+      expect(mockEnqueueSystemEvent).toHaveBeenCalledWith(
+        expect.stringContaining("[bluebubbles triage] immediate"),
+        expect.any(Object),
+      );
+    });
+
+    it("should escalate repeated unknown sender messages immediately after three messages in a short window", async () => {
+      mockEnqueueSystemEvent.mockClear();
+      setupWebhookTarget({
+        account: createMockAccount({
+          inboundTriage: {
+            enabled: true,
+            unknownSenderDelayMinutes: 5,
+            repeatedSenderImmediate: {
+              enabled: true,
+              count: 3,
+              windowMinutes: 10,
+              appliesTo: ["vip", "unknown"],
+            },
+          },
+          allowFrom: ["+15557654321"],
+        }),
+      });
+
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-unknown-imm-1",
+          senderId: "+15557654321",
+          senderName: "Alex",
+          text: "one",
+        }),
+      );
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-unknown-imm-2",
+          senderId: "+15557654321",
+          senderName: "Alex",
+          text: "two",
+        }),
+      );
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-unknown-imm-3",
+          senderId: "+15557654321",
+          senderName: "Alex",
+          text: "three",
+        }),
+      );
+
+      expect(mockDispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
+      expect(mockEnqueueSystemEvent).toHaveBeenCalledWith(
+        expect.stringContaining("[bluebubbles triage] immediate"),
+        expect.any(Object),
+      );
+    });
+
+    it("should let repeated sender escalation override delayed holdback semantics", async () => {
+      mockEnqueueSystemEvent.mockClear();
+      setupWebhookTarget({
+        account: createMockAccount({
+          inboundTriage: {
+            enabled: true,
+            vipSenderIds: ["+15551234567"],
+            vipDelayMinutes: 5,
+            repeatedSenderImmediate: {
+              enabled: true,
+              count: 3,
+              windowMinutes: 10,
+              appliesTo: ["vip", "unknown"],
+            },
+          },
+        }),
+      });
+
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-vip-override-1",
+          senderId: "+15551234567",
+          senderName: "Fiona",
+          text: "note one",
+        }),
+      );
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-vip-override-2",
+          senderId: "+15551234567",
+          senderName: "Fiona",
+          text: "note two",
+        }),
+      );
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-vip-override-3",
+          senderId: "+15551234567",
+          senderName: "Fiona",
+          text: "note three",
+        }),
+      );
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-vip-override-4",
+          senderId: "+15551234567",
+          senderName: "Fiona",
+          text: "note four",
+        }),
+      );
+
+      expect(mockEnqueueSystemEvent).toHaveBeenCalledTimes(1);
+      expect(mockEnqueueSystemEvent).toHaveBeenCalledWith(
+        expect.stringContaining("[bluebubbles triage] immediate"),
+        expect.any(Object),
+      );
+    });
+
+    it("should still prefer immediate keyword escalation over repetition or delay logic", async () => {
+      mockEnqueueSystemEvent.mockClear();
+      setupWebhookTarget({
+        account: createMockAccount({
+          inboundTriage: {
+            enabled: true,
+            vipSenderIds: ["+15551234567"],
+            vipDelayMinutes: 5,
+            immediateKeywords: ["school"],
+          },
+        }),
+      });
+
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-keyword-repeat-1",
+          senderId: "+15551234567",
+          senderName: "Fiona",
+          text: "one",
+        }),
+      );
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-keyword-repeat-2",
+          senderId: "+15551234567",
+          senderName: "Fiona",
+          text: "two",
+        }),
+      );
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-keyword-repeat-3",
+          senderId: "+15551234567",
+          senderName: "Fiona",
+          text: "school called",
+        }),
+      );
+
+      expect(mockDispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
+      expect(mockEnqueueSystemEvent).toHaveBeenCalledWith(
+        expect.stringContaining("[bluebubbles triage] immediate"),
+        expect.any(Object),
       );
     });
   });
