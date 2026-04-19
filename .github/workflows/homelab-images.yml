@@ -4,9 +4,14 @@ on:
   push:
     branches:
       - 'homelab/release-*'
-    paths:
-      - .github/workflows/homelab-images.yml
-      - Dockerfile
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '**/*.mdx'
+      - '.agents/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.gitignore'
+      - 'LICENSE'
   workflow_dispatch:
 
 concurrency:
