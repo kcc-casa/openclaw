@@ -30,6 +30,15 @@ export type BlueBubblesNetworkConfig = {
   dangerouslyAllowPrivateNetwork?: boolean;
 };
 
+export type BlueBubblesInboundTriageNotifyTarget = {
+  /** Explicit notification channel override, for example "slack". */
+  channel?: string;
+  /** Explicit delivery target override, for example "user:U02PG6MLXB8". */
+  to?: string;
+  /** Optional account id for the explicit notification channel. */
+  accountId?: string;
+};
+
 export type BlueBubblesInboundTriageConfig = {
   /** If true, treat BlueBubbles inbound as a triage stream and suppress automatic reply dispatch. */
   enabled?: boolean;
@@ -41,6 +50,8 @@ export type BlueBubblesInboundTriageConfig = {
   vipDelayMinutes?: number;
   /** Delay notifications for unknown senders before surfacing them. */
   unknownSenderDelayMinutes?: number;
+  /** Optional explicit notification destination override for triage events. */
+  notify?: BlueBubblesInboundTriageNotifyTarget;
   /** Optional repeated-sender immediate escalation rules. */
   repeatedSenderImmediate?: {
     /** Enable repeated-sender immediate escalation. */

@@ -72,7 +72,7 @@ import {
   isAllowedBlueBubblesSender,
   normalizeBlueBubblesHandle,
 } from "./targets.js";
-import type { BlueBubblesAccountConfig } from "./types.js";
+import type { BlueBubblesAccountConfig, BlueBubblesInboundTriageNotifyTarget } from "./types.js";
 import { blueBubblesFetchWithTimeout, buildBlueBubblesApiUrl } from "./types.js";
 
 const DEFAULT_TEXT_LIMIT = 4000;
@@ -370,10 +370,20 @@ export function logVerbose(
   }
 }
 
+type BlueBubblesTriageNotifyTarget = {
+  sessionKey: string;
+  deliveryContext?: BlueBubblesInboundTriageNotifyTarget;
+};
+
 type BlueBubblesTriageDecision =
   | { kind: "reply" }
   | { kind: "ignore"; reason: string }
-  | { kind: "notify"; text: string; priority: "immediate" }
+  | {
+      kind: "notify";
+      text: string;
+      priority: "immediate";
+      notifyTarget?: BlueBubblesTriageNotifyTarget;
+    }
   | {
       kind: "notify_delayed";
       text: string;
@@ -383,6 +393,7 @@ type BlueBubblesTriageDecision =
       peerKey: string;
       sessionKey: string;
       contextKey: string;
+      notifyTarget?: BlueBubblesTriageNotifyTarget;
     };
 
 type PendingDelayedTriageNotification = {
@@ -394,6 +405,7 @@ type PendingDelayedTriageNotification = {
   dueAt: number;
   contextKey: string;
   text: string;
+  notifyTarget?: BlueBubblesTriageNotifyTarget;
   timer: NodeJS.Timeout;
 };
 
@@ -558,7 +570,15 @@ function scheduleDelayedTriageNotification(params: {
   delayMinutes: number;
   contextKey: string;
   text: string;
-  enqueue: (text: string, opts: { sessionKey: string; contextKey: string }) => void;
+  notifyTarget?: BlueBubblesTriageNotifyTarget;
+  enqueue: (
+    text: string,
+    opts: {
+      sessionKey: string;
+      contextKey: string;
+      deliveryContext?: BlueBubblesInboundTriageNotifyTarget;
+    },
+  ) => void;
   instrumentation?: {
     core: BlueBubblesCoreRuntime;
     runtime: BlueBubblesRuntimeEnv;
@@ -586,18 +606,19 @@ function scheduleDelayedTriageNotification(params: {
         logTriageInstrumentation(
           params.instrumentation.core,
           params.instrumentation.runtime,
-          `enqueue-delayed sender=${params.senderId} session=${params.sessionKey} context=${params.contextKey} preview=${JSON.stringify(params.text.slice(0, 120))}`,
+          `enqueue-delayed sender=${params.senderId} session=${params.notifyTarget?.sessionKey ?? params.sessionKey} context=${params.contextKey} preview=${JSON.stringify(params.text.slice(0, 120))}`,
         );
       }
       params.enqueue(params.text, {
-        sessionKey: params.sessionKey,
+        sessionKey: params.notifyTarget?.sessionKey ?? params.sessionKey,
         contextKey: params.contextKey,
+        deliveryContext: params.notifyTarget?.deliveryContext,
       });
       if (params.instrumentation) {
         logTriageInstrumentation(
           params.instrumentation.core,
           params.instrumentation.runtime,
-          `enqueue-delayed-done sender=${params.senderId} session=${params.sessionKey} context=${params.contextKey}`,
+          `enqueue-delayed-done sender=${params.senderId} session=${params.notifyTarget?.sessionKey ?? params.sessionKey} context=${params.contextKey}`,
         );
       }
     },
@@ -612,16 +633,37 @@ function scheduleDelayedTriageNotification(params: {
     dueAt,
     contextKey: params.contextKey,
     text: params.text,
+    notifyTarget: params.notifyTarget,
     timer,
   });
   if (params.instrumentation) {
     logTriageInstrumentation(
       params.instrumentation.core,
       params.instrumentation.runtime,
-      `${replaced ? "replace" : "schedule"} sender=${params.senderId} peer=${params.peerKey} session=${params.sessionKey} delay_minutes=${params.delayMinutes} context=${params.contextKey} decision=${params.instrumentation.decisionKind ?? "notify_delayed"}`,
+      `${replaced ? "replace" : "schedule"} sender=${params.senderId} peer=${params.peerKey} session=${params.notifyTarget?.sessionKey ?? params.sessionKey} delay_minutes=${params.delayMinutes} context=${params.contextKey} decision=${params.instrumentation.decisionKind ?? "notify_delayed"}`,
     );
   }
   pruneDelayedTriageNotifications();
+}
+
+function resolveBlueBubblesTriageNotifyTarget(params: {
+  triage: NonNullable<BlueBubblesAccountConfig["inboundTriage"]>;
+  sessionKey: string;
+}): BlueBubblesTriageNotifyTarget | undefined {
+  const channel = params.triage.notify?.channel?.trim();
+  const to = params.triage.notify?.to?.trim();
+  const accountId = params.triage.notify?.accountId?.trim();
+  if (!channel || !to) {
+    return undefined;
+  }
+  return {
+    sessionKey: params.sessionKey,
+    deliveryContext: {
+      channel,
+      to,
+      ...(accountId ? { accountId } : {}),
+    },
+  };
 }
 
 function resolveBlueBubblesTriageDecision(params: {
@@ -634,6 +676,10 @@ function resolveBlueBubblesTriageDecision(params: {
   sessionKey: string;
 }): BlueBubblesTriageDecision {
   const body = normalizeOptionalLowercaseString(params.rawBody) ?? "";
+  const notifyTarget = resolveBlueBubblesTriageNotifyTarget({
+    triage: params.triage,
+    sessionKey: params.sessionKey,
+  });
   if (!body) {
     return { kind: "ignore", reason: "empty" };
   }
@@ -656,6 +702,7 @@ function resolveBlueBubblesTriageDecision(params: {
         priority: "immediate",
         reason: "keyword",
       }),
+      notifyTarget,
     };
   }
 
@@ -715,6 +762,7 @@ function resolveBlueBubblesTriageDecision(params: {
           priority: "immediate",
           reason: `repeat-${senderClass}`,
         }),
+        notifyTarget,
       };
     }
   }
@@ -737,6 +785,7 @@ function resolveBlueBubblesTriageDecision(params: {
         reason: "vip",
         delayMinutes,
       }),
+      notifyTarget,
     };
   }
 
@@ -757,6 +806,7 @@ function resolveBlueBubblesTriageDecision(params: {
       reason: "default",
       delayMinutes: unknownDelayMinutes,
     }),
+    notifyTarget,
   };
 }
 
@@ -1831,8 +1881,9 @@ export async function processMessage(
         `enqueue-immediate sender=${message.senderId} session=${route.sessionKey} context=${contextKey} preview=${JSON.stringify(triageDecision.text.slice(0, 120))}`,
       );
       core.system.enqueueSystemEvent(triageDecision.text, {
-        sessionKey: route.sessionKey,
+        sessionKey: triageDecision.notifyTarget?.sessionKey ?? route.sessionKey,
         contextKey,
+        deliveryContext: triageDecision.notifyTarget?.deliveryContext,
       });
       logTriageInstrumentation(
         core,
@@ -1855,6 +1906,7 @@ export async function processMessage(
         delayMinutes: triageDecision.delayMinutes,
         contextKey: triageDecision.contextKey,
         text: triageDecision.text,
+        notifyTarget: triageDecision.notifyTarget,
         enqueue: (text, opts) => core.system.enqueueSystemEvent(text, opts),
         instrumentation: {
           core,
