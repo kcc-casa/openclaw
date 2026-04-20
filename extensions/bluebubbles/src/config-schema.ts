@@ -47,6 +47,14 @@ const bluebubblesInboundTriageSchema = z
     vipSenderIds: z.array(z.string()).optional(),
     vipDelayMinutes: z.number().int().min(0).optional(),
     unknownSenderDelayMinutes: z.number().int().min(0).optional(),
+    notify: z
+      .object({
+        channel: z.string().trim().min(1).optional(),
+        to: z.string().trim().min(1).optional(),
+        accountId: z.string().trim().min(1).optional(),
+      })
+      .strict()
+      .optional(),
     repeatedSenderImmediate: z
       .object({
         enabled: z.boolean().optional(),

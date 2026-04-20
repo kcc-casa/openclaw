@@ -229,6 +229,7 @@ When `inboundTriage.enabled` is `true`:
 - repeated senders can escalate to immediate notification when configured
 - OTP-style messages can be suppressed
 - after-hours work-message traffic can be suppressed
+- `inboundTriage.notify` can override where triage notifications are surfaced, for example to a Slack DM instead of the BlueBubbles conversation session
 
 Example:
 
@@ -242,6 +243,11 @@ Example:
         vipSenderIds: ["+15551234567"],
         vipDelayMinutes: 5,
         unknownSenderDelayMinutes: 10,
+        notify: {
+          channel: "slack",
+          to: "user:U02PG6MLXB8",
+          accountId: "default",
+        },
         repeatedSenderImmediate: {
           enabled: true,
           count: 3,
@@ -257,6 +263,14 @@ Example:
   },
 }
 ```
+
+`notify` fields:
+
+- `channel`: explicit notification channel, for example `"slack"`
+- `to`: explicit delivery target, for example `"user:U02PG6MLXB8"`
+- `accountId`: optional account id for the explicit destination
+
+If `notify` is unset or incomplete, BlueBubbles triage keeps the previous behavior and enqueues into the routed BlueBubbles conversation session.
 
 `repeatedSenderImmediate` fields:
 

@@ -589,6 +589,42 @@ describe("BlueBubbles webhook monitor", () => {
       );
     });
 
+    it("routes immediate triage notifications to explicit deliveryContext when configured", async () => {
+      mockEnqueueSystemEvent.mockClear();
+      setupWebhookTarget({
+        account: createMockAccount({
+          inboundTriage: {
+            enabled: true,
+            immediateKeywords: ["school"],
+            notify: {
+              channel: "slack",
+              to: "user:U02PG6MLXB8",
+              accountId: "default",
+            },
+          },
+        }),
+      });
+
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          text: "school called, please pick up Eve",
+          senderName: "Jo",
+        }),
+      );
+
+      expect(mockDispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
+      expect(mockEnqueueSystemEvent).toHaveBeenCalledWith(
+        expect.stringContaining("[bluebubbles triage] immediate"),
+        expect.objectContaining({
+          sessionKey: DEFAULT_RESOLVED_AGENT_ROUTE.mainSessionKey,
+          deliveryContext: {
+            channel: "slack",
+            to: "user:U02PG6MLXB8",
+            accountId: "default",
+          },
+        }),
+      );
+    });
     it("suppresses OTP messages when triage mode is enabled", async () => {
       mockEnqueueSystemEvent.mockClear();
       setupWebhookTarget({
@@ -649,7 +685,7 @@ describe("BlueBubbles webhook monitor", () => {
         account: createMockAccount({
           inboundTriage: {
             enabled: true,
-            vipSenderIds: ["(555) 123-4567"],
+            vipSenderIds: ["+15551234567"],
             vipDelayMinutes: 0.001,
             unknownSenderDelayMinutes: 5,
           },
@@ -774,6 +810,52 @@ describe("BlueBubbles webhook monitor", () => {
       );
     });
 
+    it("routes delayed triage notifications to explicit deliveryContext when configured", async () => {
+      mockEnqueueSystemEvent.mockClear();
+      setupWebhookTarget({
+        account: createMockAccount({
+          inboundTriage: {
+            enabled: true,
+            unknownSenderDelayMinutes: 0.001,
+            notify: {
+              channel: "slack",
+              to: "user:U02PG6MLXB8",
+              accountId: "default",
+            },
+          },
+          allowFrom: ["+15557654321"],
+        }),
+      });
+
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-unknown-slack-1",
+          senderId: "+15557654321",
+          senderName: "Alex",
+          text: "checking in about tonight",
+        }),
+      );
+
+      expect(mockDispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
+      expect(mockEnqueueSystemEvent).not.toHaveBeenCalled();
+
+      await vi.waitFor(
+        () => {
+          expect(mockEnqueueSystemEvent).toHaveBeenCalledWith(
+            expect.stringContaining("[bluebubbles triage] delayed after 0.001m hold"),
+            expect.objectContaining({
+              sessionKey: DEFAULT_RESOLVED_AGENT_ROUTE.mainSessionKey,
+              deliveryContext: {
+                channel: "slack",
+                to: "user:U02PG6MLXB8",
+                accountId: "default",
+              },
+            }),
+          );
+        },
+        { timeout: 250, interval: 10 },
+      );
+    });
     it("replaces an earlier delayed triage notification with the latest inbound message for the same sender", async () => {
       mockEnqueueSystemEvent.mockClear();
       setupWebhookTarget({
