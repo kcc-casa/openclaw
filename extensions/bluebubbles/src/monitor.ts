@@ -243,10 +243,8 @@ export async function handleBlueBubblesWebhookRequest(
         res.statusCode = 200;
         res.end("ok");
         if (firstTarget) {
-          logVerbose(
-            firstTarget.core,
-            firstTarget.runtime,
-            `webhook ignored reason=${event.reason} type=${typeof payload.type === "string" ? payload.type : ""}`,
+          firstTarget.runtime.log?.(
+            `[bluebubbles] webhook ignored reason=${event.reason} type=${typeof payload.type === "string" ? payload.type : ""}`,
           );
         }
         return true;
@@ -254,22 +252,16 @@ export async function handleBlueBubblesWebhookRequest(
 
       if (firstTarget) {
         if (event.kind === "typing") {
-          logVerbose(
-            firstTarget.core,
-            firstTarget.runtime,
-            `webhook classified kind=typing chatGuid=${event.typing.chatGuid ?? ""} display=${String(event.typing.display ?? "")}`,
+          firstTarget.runtime.log?.(
+            `[bluebubbles] webhook classified kind=typing chatGuid=${event.typing.chatGuid ?? ""} display=${String(event.typing.display ?? "")}`,
           );
         } else if (event.kind === "reaction") {
-          logVerbose(
-            firstTarget.core,
-            firstTarget.runtime,
-            `webhook classified kind=reaction sender=${event.reaction.senderId} msg=${event.reaction.messageId} action=${event.reaction.action} emoji=${event.reaction.emoji}`,
+          firstTarget.runtime.log?.(
+            `[bluebubbles] webhook classified kind=reaction sender=${event.reaction.senderId} msg=${event.reaction.messageId} action=${event.reaction.action} emoji=${event.reaction.emoji}`,
           );
         } else if (event.kind === "message") {
-          logVerbose(
-            firstTarget.core,
-            firstTarget.runtime,
-            `webhook classified kind=message sender=${event.message.senderId} fromMe=${String(event.message.fromMe ?? "")} group=${event.message.isGroup} chatGuid=${event.message.chatGuid ?? ""} attachments=${event.message.attachments?.length ?? 0} text=${JSON.stringify(event.message.text)}`,
+          firstTarget.runtime.log?.(
+            `[bluebubbles] webhook classified kind=message sender=${event.message.senderId} fromMe=${String(event.message.fromMe ?? "")} group=${event.message.isGroup} chatGuid=${event.message.chatGuid ?? ""} attachments=${event.message.attachments?.length ?? 0} text=${JSON.stringify(event.message.text)}`,
           );
         }
       }
@@ -294,23 +286,19 @@ export async function handleBlueBubblesWebhookRequest(
       res.end("ok");
       if (event.kind === "reaction") {
         if (firstTarget) {
-          logVerbose(
-            firstTarget.core,
-            firstTarget.runtime,
-            `webhook accepted reaction sender=${event.reaction.senderId} msg=${event.reaction.messageId} action=${event.reaction.action}`,
+          firstTarget.runtime.log?.(
+            `[bluebubbles] webhook accepted reaction sender=${event.reaction.senderId} msg=${event.reaction.messageId} action=${event.reaction.action}`,
           );
         }
       } else if (event.kind === "message") {
         if (firstTarget) {
-          logVerbose(
-            firstTarget.core,
-            firstTarget.runtime,
-            `webhook accepted sender=${event.message.senderId} group=${event.message.isGroup} chatGuid=${event.message.chatGuid ?? ""} chatId=${event.message.chatId ?? ""}`,
+          firstTarget.runtime.log?.(
+            `[bluebubbles] webhook accepted sender=${event.message.senderId} group=${event.message.isGroup} chatGuid=${event.message.chatGuid ?? ""} chatId=${event.message.chatId ?? ""}`,
           );
         }
       } else if (event.kind === "typing") {
         if (firstTarget) {
-          logVerbose(firstTarget.core, firstTarget.runtime, "webhook accepted typing event");
+          firstTarget.runtime.log?.("[bluebubbles] webhook accepted typing event");
         }
       }
       return true;
