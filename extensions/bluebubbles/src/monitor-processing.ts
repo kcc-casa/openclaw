@@ -583,11 +583,23 @@ function scheduleDelayedTriageNotification(params: {
           params.instrumentation.runtime,
           `fire sender=${params.senderId} peer=${params.peerKey} session=${params.sessionKey} context=${params.contextKey} decision=${params.instrumentation.decisionKind ?? "notify_delayed"}`,
         );
+        logTriageInstrumentation(
+          params.instrumentation.core,
+          params.instrumentation.runtime,
+          `enqueue-delayed sender=${params.senderId} session=${params.sessionKey} context=${params.contextKey} preview=${JSON.stringify(params.text.slice(0, 120))}`,
+        );
       }
       params.enqueue(params.text, {
         sessionKey: params.sessionKey,
         contextKey: params.contextKey,
       });
+      if (params.instrumentation) {
+        logTriageInstrumentation(
+          params.instrumentation.core,
+          params.instrumentation.runtime,
+          `enqueue-delayed-done sender=${params.senderId} session=${params.sessionKey} context=${params.contextKey}`,
+        );
+      }
     },
     Math.max(dueAt - scheduledAt, 0),
   );
@@ -1255,7 +1267,7 @@ export async function processMessage(
   logTriageInstrumentation(
     core,
     runtime,
-    `route sender=${message.senderId} peer=${peerId} session=${route.sessionKey} agent=${route.agentId} matchedBy=${route.matchedBy} lastRoutePolicy=${route.lastRoutePolicy}`,
+    `route sender=${message.senderId} peer=${peerId} session=${route.sessionKey} agent=${route.agentId} matchedBy=${route.matchedBy} lastRoutePolicy=${route.lastRoutePolicy} chatGuid=${chatGuid ?? ""} chatIdentifier=${chatIdentifier ?? ""}`,
   );
   const contextVisibilityMode = resolveChannelContextVisibilityMode({
     cfg: config,
@@ -1822,6 +1834,11 @@ export async function processMessage(
         sessionKey: route.sessionKey,
         contextKey,
       });
+      logTriageInstrumentation(
+        core,
+        runtime,
+        `enqueue-immediate-done sender=${message.senderId} session=${route.sessionKey} context=${contextKey}`,
+      );
       logVerbose(
         core,
         runtime,
