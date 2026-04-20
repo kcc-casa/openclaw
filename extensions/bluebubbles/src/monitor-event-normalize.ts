@@ -24,10 +24,12 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+function normalizeEventType(payload: Record<string, unknown>): string {
+  return normalizeOptionalString(typeof payload.type === "string" ? payload.type : undefined) ?? "";
+}
+
 function normalizeTypingEvent(payload: Record<string, unknown>): NormalizedWebhookTyping | null {
-  const eventType = normalizeOptionalString(
-    typeof payload.type === "string" ? payload.type : undefined,
-  );
+  const eventType = normalizeEventType(payload);
   if (eventType !== "typing-indicator") {
     return null;
   }
@@ -39,9 +41,14 @@ function normalizeTypingEvent(payload: Record<string, unknown>): NormalizedWebho
 }
 
 export function normalizeWebhookEvent(payload: Record<string, unknown>): NormalizedWebhookEvent {
+  const eventType = normalizeEventType(payload);
   const typing = normalizeTypingEvent(payload);
   if (typing) {
     return { kind: "typing", typing };
+  }
+
+  if (eventType === "chat-read-status-changed") {
+    return { kind: "ignored", reason: "chat-read-status-changed" };
   }
 
   const reaction = normalizeWebhookReaction(payload);

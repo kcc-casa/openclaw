@@ -62,6 +62,15 @@ describe("normalizeWebhookEvent", () => {
     expect(result.reaction.messageId).toBe("p:0/AAAA1111-BBBB-4CCC-8DDD-EEEEFFFF0000");
   });
 
+  it("ignores chat-read-status-changed payloads", () => {
+    const result = normalizeWebhookEvent(readFixture("chat-read-status-changed.json"));
+
+    expect(result).toEqual({
+      kind: "ignored",
+      reason: "chat-read-status-changed",
+    });
+  });
+
   it("keeps image text messages as normal messages with attachments", () => {
     const result = normalizeWebhookEvent(readFixture("new-message.image-with-text.json"));
 

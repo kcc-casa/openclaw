@@ -1,0 +1,7 @@
+{
+  "type": "chat-read-status-changed",
+  "data": {
+    "chatGuid": "iMessage;-;+15551234567",
+    "read": true
+  }
+}
