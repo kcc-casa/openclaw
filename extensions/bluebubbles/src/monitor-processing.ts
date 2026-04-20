@@ -493,6 +493,14 @@ function cancelDelayedTriageNotificationByKey(key: string): void {
   pendingDelayedTriageNotifications.delete(key);
 }
 
+function logTriageInstrumentation(
+  core: BlueBubblesCoreRuntime,
+  runtime: BlueBubblesRuntimeEnv,
+  message: string,
+): void {
+  logVerbose(core, runtime, `[triage] ${message}`);
+}
+
 function cancelDelayedTriageNotification(params: {
   accountId: string;
   peerKey: string;
@@ -551,18 +559,31 @@ function scheduleDelayedTriageNotification(params: {
   contextKey: string;
   text: string;
   enqueue: (text: string, opts: { sessionKey: string; contextKey: string }) => void;
+  instrumentation?: {
+    core: BlueBubblesCoreRuntime;
+    runtime: BlueBubblesRuntimeEnv;
+    decisionKind?: string;
+  };
 }): void {
   const key = buildDelayedTriageKey({
     accountId: params.accountId,
     peerKey: params.peerKey,
     senderId: params.senderId,
   });
+  const replaced = pendingDelayedTriageNotifications.has(key);
   cancelDelayedTriageNotificationByKey(key);
   const scheduledAt = Date.now();
   const dueAt = scheduledAt + params.delayMinutes * 60 * 1000;
   const timer = setTimeout(
     () => {
       pendingDelayedTriageNotifications.delete(key);
+      if (params.instrumentation) {
+        logTriageInstrumentation(
+          params.instrumentation.core,
+          params.instrumentation.runtime,
+          `fire sender=${params.senderId} peer=${params.peerKey} session=${params.sessionKey} context=${params.contextKey} decision=${params.instrumentation.decisionKind ?? "notify_delayed"}`,
+        );
+      }
       params.enqueue(params.text, {
         sessionKey: params.sessionKey,
         contextKey: params.contextKey,
@@ -581,6 +602,13 @@ function scheduleDelayedTriageNotification(params: {
     text: params.text,
     timer,
   });
+  if (params.instrumentation) {
+    logTriageInstrumentation(
+      params.instrumentation.core,
+      params.instrumentation.runtime,
+      `${replaced ? "replace" : "schedule"} sender=${params.senderId} peer=${params.peerKey} session=${params.sessionKey} delay_minutes=${params.delayMinutes} context=${params.contextKey} decision=${params.instrumentation.decisionKind ?? "notify_delayed"}`,
+    );
+  }
   pruneDelayedTriageNotifications();
 }
 
@@ -1224,6 +1252,11 @@ export async function processMessage(
     chatGuid,
     chatIdentifier,
   });
+  logTriageInstrumentation(
+    core,
+    runtime,
+    `route sender=${message.senderId} peer=${peerId} session=${route.sessionKey} agent=${route.agentId} matchedBy=${route.matchedBy} lastRoutePolicy=${route.lastRoutePolicy}`,
+  );
   const contextVisibilityMode = resolveChannelContextVisibilityMode({
     cfg: config,
     channel: "bluebubbles",
@@ -1744,7 +1777,18 @@ export async function processMessage(
   }
   const commandBody = messageText.trim();
 
+  logTriageInstrumentation(
+    core,
+    runtime,
+    `enabled=${triageEnabled ? "true" : "false"} sender=${message.senderId} peer=${peerId} session=${route.sessionKey}`,
+  );
+
   if (triageEnabled) {
+    logTriageInstrumentation(
+      core,
+      runtime,
+      `evaluate sender=${message.senderId} peer=${peerId} session=${route.sessionKey} chatGuid=${chatGuid ?? ""} chatIdentifier=${chatIdentifier ?? ""}`,
+    );
     const triageDecision = resolveBlueBubblesTriageDecision({
       message,
       rawBody,
@@ -1754,6 +1798,11 @@ export async function processMessage(
       peerKey: peerId,
       sessionKey: route.sessionKey,
     });
+    logTriageInstrumentation(
+      core,
+      runtime,
+      `decision sender=${message.senderId} kind=${triageDecision.kind}${triageDecision.kind === "notify_delayed" ? ` delay_minutes=${triageDecision.delayMinutes}` : ""}${triageDecision.kind === "ignore" ? ` reason=${triageDecision.reason}` : ""}`,
+    );
     if (triageDecision.kind === "ignore") {
       logVerbose(
         core,
@@ -1763,9 +1812,15 @@ export async function processMessage(
       return;
     }
     if (triageDecision.kind === "notify") {
+      const contextKey = `bluebubbles:triage:${account.accountId}:${message.messageId ?? message.timestamp ?? Date.now()}`;
+      logTriageInstrumentation(
+        core,
+        runtime,
+        `enqueue-immediate sender=${message.senderId} session=${route.sessionKey} context=${contextKey} preview=${JSON.stringify(triageDecision.text.slice(0, 120))}`,
+      );
       core.system.enqueueSystemEvent(triageDecision.text, {
         sessionKey: route.sessionKey,
-        contextKey: `bluebubbles:triage:${account.accountId}:${message.messageId ?? message.timestamp ?? Date.now()}`,
+        contextKey,
       });
       logVerbose(
         core,
@@ -1784,6 +1839,11 @@ export async function processMessage(
         contextKey: triageDecision.contextKey,
         text: triageDecision.text,
         enqueue: (text, opts) => core.system.enqueueSystemEvent(text, opts),
+        instrumentation: {
+          core,
+          runtime,
+          decisionKind: triageDecision.kind,
+        },
       });
       logVerbose(
         core,

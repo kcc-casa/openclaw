@@ -643,6 +643,66 @@ describe("BlueBubbles webhook monitor", () => {
       );
     });
 
+    it("matches VIP sender IDs after handle normalization", async () => {
+      mockEnqueueSystemEvent.mockClear();
+      setupWebhookTarget({
+        account: createMockAccount({
+          inboundTriage: {
+            enabled: true,
+            vipSenderIds: ["(555) 123-4567"],
+            vipDelayMinutes: 0.001,
+            unknownSenderDelayMinutes: 5,
+          },
+        }),
+      });
+
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-vip-normalized-1",
+          senderId: "+15551234567",
+          senderName: "Jo",
+          text: "normalized vip match",
+        }),
+      );
+
+      await vi.waitFor(
+        () => {
+          expect(mockEnqueueSystemEvent).toHaveBeenCalledWith(
+            expect.stringContaining("[bluebubbles triage] delayed after 0.001m hold"),
+            expect.any(Object),
+          );
+        },
+        { timeout: 250, interval: 10 },
+      );
+    });
+
+    it("loses delayed triage notifications when in-memory triage state is reset before they fire", async () => {
+      mockEnqueueSystemEvent.mockClear();
+      setupWebhookTarget({
+        account: createMockAccount({
+          inboundTriage: {
+            enabled: true,
+            vipSenderIds: ["+15551234567"],
+            vipDelayMinutes: 0.002,
+          },
+        }),
+      });
+
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-vip-restart-loss-1",
+          senderId: "+15551234567",
+          senderName: "Fiona",
+          text: "this should be lost on reset",
+        }),
+      );
+
+      resetBlueBubblesTriageStateForTest();
+      await new Promise((resolve) => setTimeout(resolve, 180));
+
+      expect(mockEnqueueSystemEvent).not.toHaveBeenCalled();
+    });
+
     it("cancels a delayed triage notification when a from-me webhook arrives first", async () => {
       mockEnqueueSystemEvent.mockClear();
       setupWebhookTarget({
