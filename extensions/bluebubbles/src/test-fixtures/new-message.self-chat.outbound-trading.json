@@ -1,0 +1,52 @@
+{
+  "type": "new-message",
+  "data": {
+    "originalROWID": 100001,
+    "guid": "11111111-1111-4111-8111-111111111111",
+    "text": "Trading",
+    "attributedBody": null,
+    "handle": {
+      "originalROWID": 501,
+      "address": "+15551234567",
+      "service": "iMessage",
+      "uncanonicalizedId": null,
+      "country": "US"
+    },
+    "handleId": 501,
+    "otherHandle": 0,
+    "attachments": [],
+    "subject": null,
+    "error": 0,
+    "dateCreated": 1776686027336,
+    "dateRead": null,
+    "dateDelivered": null,
+    "isDelivered": true,
+    "isFromMe": true,
+    "hasDdResults": false,
+    "isArchived": false,
+    "itemType": 0,
+    "groupTitle": null,
+    "groupActionType": 0,
+    "balloonBundleId": null,
+    "associatedMessageGuid": null,
+    "associatedMessageType": null,
+    "expressiveSendStyleId": null,
+    "threadOriginatorGuid": null,
+    "hasPayloadData": false,
+    "chats": [
+      {
+        "originalROWID": 901,
+        "guid": "iMessage;-;+15551234567",
+        "style": 45,
+        "chatIdentifier": "+15551234567",
+        "isArchived": false,
+        "displayName": ""
+      }
+    ],
+    "messageSummaryInfo": null,
+    "payloadData": null,
+    "dateEdited": null,
+    "dateRetracted": null,
+    "partCount": 1
+  }
+}

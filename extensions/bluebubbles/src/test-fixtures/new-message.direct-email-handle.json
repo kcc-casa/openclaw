@@ -1,0 +1,52 @@
+{
+  "type": "new-message",
+  "data": {
+    "originalROWID": 100007,
+    "guid": "77777777-7777-4777-8777-777777777777",
+    "text": "Hello from email handle",
+    "attributedBody": null,
+    "handle": {
+      "originalROWID": 504,
+      "address": "person@example.test",
+      "service": "iMessage",
+      "uncanonicalizedId": null,
+      "country": "US"
+    },
+    "handleId": 504,
+    "otherHandle": 0,
+    "attachments": [],
+    "subject": null,
+    "error": 0,
+    "dateCreated": 1776554361101,
+    "dateRead": null,
+    "dateDelivered": null,
+    "isDelivered": true,
+    "isFromMe": true,
+    "hasDdResults": true,
+    "isArchived": false,
+    "itemType": 0,
+    "groupTitle": null,
+    "groupActionType": 0,
+    "balloonBundleId": null,
+    "associatedMessageGuid": null,
+    "associatedMessageType": null,
+    "expressiveSendStyleId": null,
+    "threadOriginatorGuid": null,
+    "hasPayloadData": false,
+    "chats": [
+      {
+        "originalROWID": 904,
+        "guid": "iMessage;-;person@example.test",
+        "style": 45,
+        "chatIdentifier": "person@example.test",
+        "isArchived": false,
+        "displayName": ""
+      }
+    ],
+    "messageSummaryInfo": null,
+    "payloadData": null,
+    "dateEdited": null,
+    "dateRetracted": null,
+    "partCount": 1
+  }
+}

@@ -4,11 +4,8 @@ import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import { normalizeLowercaseStringOrEmpty } from "openclaw/plugin-sdk/text-runtime";
 import { resolveBlueBubblesEffectiveAllowPrivateNetwork } from "./accounts.js";
 import { createBlueBubblesDebounceRegistry } from "./monitor-debounce.js";
-import {
-  asRecord,
-  normalizeWebhookMessage,
-  normalizeWebhookReaction,
-} from "./monitor-normalize.js";
+import { normalizeWebhookEvent } from "./monitor-event-normalize.js";
+import { asRecord } from "./monitor-normalize.js";
 import { logVerbose, processMessage, processReaction } from "./monitor-processing.js";
 import {
   _resetBlueBubblesShortIdState,
@@ -241,60 +238,52 @@ export async function handleBlueBubblesWebhookRequest(
           `webhook received path=${path} keys=${Object.keys(payload).join(",") || "none"}`,
         );
       }
-      const eventTypeRaw = payload.type;
-      const eventType = typeof eventTypeRaw === "string" ? eventTypeRaw.trim() : "";
-      const allowedEventTypes = new Set([
-        "new-message",
-        "updated-message",
-        "message-reaction",
-        "reaction",
-      ]);
-      if (eventType && !allowedEventTypes.has(eventType)) {
-        res.statusCode = 200;
-        res.end("ok");
-        if (firstTarget) {
-          logVerbose(firstTarget.core, firstTarget.runtime, `webhook ignored type=${eventType}`);
-        }
-        return true;
-      }
-      const reaction = normalizeWebhookReaction(payload);
-      if (
-        (eventType === "updated-message" ||
-          eventType === "message-reaction" ||
-          eventType === "reaction") &&
-        !reaction
-      ) {
+      const event = normalizeWebhookEvent(payload);
+      if (event.kind === "ignored") {
         res.statusCode = 200;
         res.end("ok");
         if (firstTarget) {
           logVerbose(
             firstTarget.core,
             firstTarget.runtime,
-            `webhook ignored ${eventType || "event"} without reaction`,
+            `webhook ignored reason=${event.reason} type=${typeof payload.type === "string" ? payload.type : ""}`,
           );
         }
         return true;
       }
-      const message = reaction ? null : normalizeWebhookMessage(payload);
-      if (!message && !reaction) {
-        res.statusCode = 400;
-        res.end("invalid payload");
-        console.warn("[bluebubbles] webhook rejected: unable to parse message payload");
-        return true;
+
+      if (firstTarget) {
+        if (event.kind === "typing") {
+          logVerbose(
+            firstTarget.core,
+            firstTarget.runtime,
+            `webhook classified kind=typing chatGuid=${event.typing.chatGuid ?? ""} display=${String(event.typing.display ?? "")}`,
+          );
+        } else if (event.kind === "reaction") {
+          logVerbose(
+            firstTarget.core,
+            firstTarget.runtime,
+            `webhook classified kind=reaction sender=${event.reaction.senderId} msg=${event.reaction.messageId} action=${event.reaction.action} emoji=${event.reaction.emoji}`,
+          );
+        } else if (event.kind === "message") {
+          logVerbose(
+            firstTarget.core,
+            firstTarget.runtime,
+            `webhook classified kind=message sender=${event.message.senderId} fromMe=${String(event.message.fromMe ?? "")} group=${event.message.isGroup} chatGuid=${event.message.chatGuid ?? ""} attachments=${event.message.attachments?.length ?? 0} text=${JSON.stringify(event.message.text)}`,
+          );
+        }
       }
 
       target.statusSink?.({ lastInboundAt: Date.now() });
-      if (reaction) {
-        processReaction(reaction, target).catch((err) => {
+      if (event.kind === "reaction") {
+        processReaction(event.reaction, target).catch((err) => {
           target.runtime.error?.(
             `[${target.account.accountId}] BlueBubbles reaction failed: ${String(err)}`,
           );
         });
-      } else if (message) {
-        // Route messages through debouncer to coalesce rapid-fire events
-        // (e.g., text message + URL balloon arriving as separate webhooks)
+      } else if (event.kind === "message") {
         const debouncer = debounceRegistry.getOrCreateDebouncer(target);
-        debouncer.enqueue({ message, target }).catch((err) => {
+        debouncer.enqueue({ message: event.message, target }).catch((err) => {
           target.runtime.error?.(
             `[${target.account.accountId}] BlueBubbles webhook failed: ${String(err)}`,
           );
@@ -303,21 +292,25 @@ export async function handleBlueBubblesWebhookRequest(
 
       res.statusCode = 200;
       res.end("ok");
-      if (reaction) {
+      if (event.kind === "reaction") {
         if (firstTarget) {
           logVerbose(
             firstTarget.core,
             firstTarget.runtime,
-            `webhook accepted reaction sender=${reaction.senderId} msg=${reaction.messageId} action=${reaction.action}`,
+            `webhook accepted reaction sender=${event.reaction.senderId} msg=${event.reaction.messageId} action=${event.reaction.action}`,
           );
         }
-      } else if (message) {
+      } else if (event.kind === "message") {
         if (firstTarget) {
           logVerbose(
             firstTarget.core,
             firstTarget.runtime,
-            `webhook accepted sender=${message.senderId} group=${message.isGroup} chatGuid=${message.chatGuid ?? ""} chatId=${message.chatId ?? ""}`,
+            `webhook accepted sender=${event.message.senderId} group=${event.message.isGroup} chatGuid=${event.message.chatGuid ?? ""} chatId=${event.message.chatId ?? ""}`,
           );
+        }
+      } else if (event.kind === "typing") {
+        if (firstTarget) {
+          logVerbose(firstTarget.core, firstTarget.runtime, "webhook accepted typing event");
         }
       }
       return true;

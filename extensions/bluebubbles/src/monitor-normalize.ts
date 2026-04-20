@@ -510,6 +510,38 @@ const REACTION_TYPE_MAP = new Map<number, { emoji: string; action: "added" | "re
   [3005, { emoji: "❓", action: "removed" }],
 ]);
 
+const REACTION_TYPE_TEXT_MAP = new Map<
+  string,
+  { emoji: string; action: "added" | "removed"; numericType?: number }
+>([
+  ["love", { emoji: "❤️", action: "added", numericType: 2000 }],
+  ["heart", { emoji: "❤️", action: "added", numericType: 2000 }],
+  ["like", { emoji: "👍", action: "added", numericType: 2001 }],
+  ["thumbsup", { emoji: "👍", action: "added", numericType: 2001 }],
+  ["thumbs_up", { emoji: "👍", action: "added", numericType: 2001 }],
+  ["dislike", { emoji: "👎", action: "added", numericType: 2002 }],
+  ["thumbsdown", { emoji: "👎", action: "added", numericType: 2002 }],
+  ["thumbs_down", { emoji: "👎", action: "added", numericType: 2002 }],
+  ["laugh", { emoji: "😂", action: "added", numericType: 2003 }],
+  ["haha", { emoji: "😂", action: "added", numericType: 2003 }],
+  ["emphasize", { emoji: "‼️", action: "added", numericType: 2004 }],
+  ["emphasis", { emoji: "‼️", action: "added", numericType: 2004 }],
+  ["question", { emoji: "❓", action: "added", numericType: 2005 }],
+  ["remove-love", { emoji: "❤️", action: "removed", numericType: 3000 }],
+  ["remove-heart", { emoji: "❤️", action: "removed", numericType: 3000 }],
+  ["unlove", { emoji: "❤️", action: "removed", numericType: 3000 }],
+  ["remove-like", { emoji: "👍", action: "removed", numericType: 3001 }],
+  ["unlike", { emoji: "👍", action: "removed", numericType: 3001 }],
+  ["remove-dislike", { emoji: "👎", action: "removed", numericType: 3002 }],
+  ["undislike", { emoji: "👎", action: "removed", numericType: 3002 }],
+  ["remove-laugh", { emoji: "😂", action: "removed", numericType: 3003 }],
+  ["unlaugh", { emoji: "😂", action: "removed", numericType: 3003 }],
+  ["remove-emphasis", { emoji: "‼️", action: "removed", numericType: 3004 }],
+  ["unemphasize", { emoji: "‼️", action: "removed", numericType: 3004 }],
+  ["remove-question", { emoji: "❓", action: "removed", numericType: 3005 }],
+  ["unquestion", { emoji: "❓", action: "removed", numericType: 3005 }],
+]);
+
 // Maps tapback text patterns (e.g., "Loved", "Liked") to emoji + action
 const TAPBACK_TEXT_MAP = new Map<string, { emoji: string; action: "added" | "removed" }>([
   ["loved", { emoji: "❤️", action: "added" }],
@@ -538,6 +570,16 @@ function extractFirstEmoji(text: string): string | null {
 function extractQuotedTapbackText(text: string): string | null {
   const match = text.match(/[“"]([^”"]+)[”"]/s);
   return match ? match[1] : null;
+}
+
+function resolveReactionTypeText(
+  value: string | undefined,
+): { emoji: string; action: "added" | "removed"; numericType?: number } | null {
+  const key = normalizeLowercaseStringOrEmpty(value ?? "").replace(/\s+/g, "-");
+  if (!key) {
+    return null;
+  }
+  return REACTION_TYPE_TEXT_MAP.get(key) ?? null;
 }
 
 function isTapbackAssociatedType(type: number | undefined): boolean {
@@ -716,9 +758,14 @@ export function normalizeWebhookMessage(
     readString(message, "associated_message_guid") ??
     readString(message, "associatedMessageId") ??
     undefined;
+  const associatedMessageTypeText =
+    readString(message, "associatedMessageType") ??
+    readString(message, "associated_message_type") ??
+    undefined;
   const associatedMessageType =
     readNumberLike(message, "associatedMessageType") ??
-    readNumberLike(message, "associated_message_type");
+    readNumberLike(message, "associated_message_type") ??
+    resolveReactionTypeText(associatedMessageTypeText)?.numericType;
   const associatedMessageEmoji =
     readString(message, "associatedMessageEmoji") ??
     readString(message, "associated_message_emoji") ??
@@ -789,20 +836,30 @@ export function normalizeWebhookReaction(
     readString(message, "associatedMessageGuid") ??
     readString(message, "associated_message_guid") ??
     readString(message, "associatedMessageId");
+  const associatedTypeText =
+    readString(message, "associatedMessageType") ??
+    readString(message, "associated_message_type") ??
+    undefined;
+  const stringTypeMapping = resolveReactionTypeText(associatedTypeText);
   const associatedType =
     readNumberLike(message, "associatedMessageType") ??
-    readNumberLike(message, "associated_message_type");
-  if (!associatedGuid || associatedType === undefined) {
+    readNumberLike(message, "associated_message_type") ??
+    stringTypeMapping?.numericType;
+  if (!associatedGuid || (associatedType === undefined && !stringTypeMapping)) {
     return null;
   }
 
-  const mapping = REACTION_TYPE_MAP.get(associatedType);
+  const mapping = REACTION_TYPE_MAP.get(associatedType ?? -1) ?? stringTypeMapping ?? undefined;
   const associatedEmoji =
     readString(message, "associatedMessageEmoji") ??
     readString(message, "associated_message_emoji") ??
     readString(message, "reactionEmoji") ??
     readString(message, "reaction_emoji");
-  const emoji = (associatedEmoji?.trim() || mapping?.emoji) ?? `reaction:${associatedType}`;
+  const emoji =
+    (associatedEmoji?.trim() || mapping?.emoji) ??
+    (associatedType !== undefined
+      ? `reaction:${associatedType}`
+      : `reaction:${associatedTypeText}`);
   const action = mapping?.action ?? resolveTapbackActionHint(associatedType) ?? "added";
 
   const { senderId, senderIdExplicit, senderName } = extractSenderInfo(message);

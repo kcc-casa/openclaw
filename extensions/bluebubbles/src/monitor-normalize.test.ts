@@ -139,4 +139,25 @@ describe("normalizeWebhookReaction", () => {
     expect(result?.messageId).toBe("p:0/msg-1");
     expect(result?.action).toBe("added");
   });
+
+  it("parses string associatedMessageType values like like", () => {
+    const result = normalizeWebhookReaction({
+      type: "updated-message",
+      data: {
+        guid: "msg-3",
+        isGroup: false,
+        isFromMe: true,
+        handle: { address: "person@example.test" },
+        chatGuid: "iMessage;-;person@example.test",
+        associatedMessageGuid: "p:0/msg-like-1",
+        associatedMessageType: "like",
+      },
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.senderId).toBe("person@example.test");
+    expect(result?.messageId).toBe("p:0/msg-like-1");
+    expect(result?.action).toBe("added");
+    expect(result?.emoji).toBe("👍");
+  });
 });
