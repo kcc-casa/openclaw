@@ -498,7 +498,7 @@ function logTriageInstrumentation(
   runtime: BlueBubblesRuntimeEnv,
   message: string,
 ): void {
-  logVerbose(core, runtime, `[triage] ${message}`);
+  runtime.log?.(`[bluebubbles] [triage] ${message}`);
 }
 
 function cancelDelayedTriageNotification(params: {
