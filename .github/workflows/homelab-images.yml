@@ -216,16 +216,14 @@ jobs:
           cd homelab
           existing_pr="$(gh pr list --repo "${HOMELAB_REPO}" --head "${HOMELAB_BRANCH}" --json number --jq '.[0].number // empty')"
           title="chore(openclaw): bump base image to ${{ needs.build-and-publish.outputs.image_tag }}"
-          body=$(cat <<EOF
-Automated promotion from:
-- repo: kcc-casa/openclaw
-- branch: ${GITHUB_REF_NAME}
-- source commit: ${GITHUB_SHA}
-- published base image: ${OPENCLAW_BASE_IMAGE}
-
-This PR updates \`${HOMELAB_BASE_IMAGE_FILE}\` so the homelab custom-image pipeline can rebuild the real runtime image and continue its normal GitOps write-back path.
-EOF
-)
+          body=$(printf '%s\n' \
+            'Automated promotion from:' \
+            '- repo: kcc-casa/openclaw' \
+            "- branch: ${GITHUB_REF_NAME}" \
+            "- source commit: ${GITHUB_SHA}" \
+            "- published base image: ${OPENCLAW_BASE_IMAGE}" \
+            '' \
+            "This PR updates \\`${HOMELAB_BASE_IMAGE_FILE}\\` so the homelab custom-image pipeline can rebuild the real runtime image and continue its normal GitOps write-back path.")
           if [ -n "${existing_pr}" ]; then
             gh pr edit "${existing_pr}" --repo "${HOMELAB_REPO}" --title "${title}" --body "${body}"
             echo "pr_number=${existing_pr}" >> "${GITHUB_OUTPUT}"
