@@ -70,6 +70,7 @@ export type ExecToolDetails =
       cwd?: string;
       nodeId?: string;
       warningText?: string;
+      manualApprovalRequired?: boolean;
     }
   | {
       status: "approval-unavailable";
