@@ -619,6 +619,37 @@ describe("handleToolExecutionEnd exec approval prompts", () => {
     expect(ctx.state.deterministicApprovalPromptSent).toBe(true);
   });
 
+  it("does not emit deterministic approval prompt text when approval is not manually required", async () => {
+    const { ctx } = createTestContext();
+    const onToolResult = vi.fn();
+    ctx.params.onToolResult = onToolResult;
+
+    await handleToolExecutionEnd(
+      ctx as never,
+      {
+        type: "tool_execution_end",
+        toolName: "exec",
+        toolCallId: "tool-exec-approval-autoapproved",
+        isError: false,
+        result: {
+          details: {
+            status: "approval-pending",
+            approvalId: "12345678-1234-1234-1234-123456789012",
+            approvalSlug: "12345678",
+            expiresAtMs: 1_800_000_000_000,
+            host: "gateway",
+            command: "kubectl get pods",
+            cwd: "/tmp/work",
+            manualApprovalRequired: false,
+          },
+        },
+      } as never,
+    );
+
+    expect(onToolResult).not.toHaveBeenCalled();
+    expect(ctx.state.deterministicApprovalPromptSent).toBe(false);
+  });
+
   it("does not suppress assistant output when deterministic prompt delivery rejects", async () => {
     const { ctx } = createTestContext();
     ctx.params.onToolResult = vi.fn(async () => {
