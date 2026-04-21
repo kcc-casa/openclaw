@@ -252,30 +252,23 @@ jobs:
           git commit -m "chore(openclaw): bump base image to ${{ needs.prepare-promote-inputs.outputs.image_tag }}"
           git push --force-with-lease origin "${HOMELAB_BRANCH}"
 
-      - name: Install GitHub CLI
-        if: ${{ steps.diff-check.outputs.changed == 'true' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          type gh >/dev/null 2>&1 && exit 0
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-            | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg >/dev/null
-          sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-            | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
-          sudo apt-get update
-          sudo apt-get install -y gh
-
       - name: Create or update homelab PR
         if: ${{ steps.diff-check.outputs.changed == 'true' }}
         id: create-pr
         shell: bash
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
           cd homelab
-          existing_pr="$(gh pr list --repo "${HOMELAB_REPO}" --head "${HOMELAB_BRANCH}" --json number --jq '.[0].number // empty')"
+          api() {
+            gh api \
+              -H "Authorization: Bearer ${APP_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "$@"
+          }
+          existing_pr="$(api "repos/${HOMELAB_REPO}/pulls?state=open&head=kcc-casa:${HOMELAB_BRANCH}" --jq '.[0].number // empty')"
           title="chore(openclaw): bump base image to ${{ needs.prepare-promote-inputs.outputs.image_tag }}"
           body=$(printf '%s\n' \
             'Automated promotion from:' \
@@ -285,12 +278,19 @@ jobs:
             "- published base image: ${OPENCLAW_BASE_IMAGE}" \
             '' \
             "This PR updates \\`${HOMELAB_BASE_IMAGE_FILE}\\` so the homelab custom-image pipeline can rebuild the real runtime image and continue its normal GitOps write-back path.")
+          body_json="$(jq -Rn --arg body "${body}" '$body')"
           if [ -n "${existing_pr}" ]; then
-            gh pr edit "${existing_pr}" --repo "${HOMELAB_REPO}" --title "${title}" --body "${body}"
+            api -X PATCH "repos/${HOMELAB_REPO}/pulls/${existing_pr}" \
+              -f title="${title}" \
+              -F body="${body}"
             echo "pr_number=${existing_pr}" >> "${GITHUB_OUTPUT}"
           else
-            pr_number="$(gh pr create --repo "${HOMELAB_REPO}" --base "${HOMELAB_BASE_BRANCH}" --head "${HOMELAB_BRANCH}" --title "${title}" --body "${body}")"
-            pr_number="${pr_number##*/}"
+            pr_number="$(api -X POST "repos/${HOMELAB_REPO}/pulls" \
+              -f title="${title}" \
+              -f head="${HOMELAB_BRANCH}" \
+              -f base="${HOMELAB_BASE_BRANCH}" \
+              -F body="${body}" \
+              --jq '.number')"
             echo "pr_number=${pr_number}" >> "${GITHUB_OUTPUT}"
           fi
 
@@ -298,10 +298,13 @@ jobs:
         if: ${{ steps.diff-check.outputs.changed == 'true' }}
         shell: bash
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
-          gh pr merge "${{ steps.create-pr.outputs.pr_number }}" \
-            --repo "${HOMELAB_REPO}" \
-            --auto \
-            --squash
+          gh api graphql \
+            -H "Authorization: Bearer ${APP_TOKEN}" \
+            -f query='mutation($owner:String!, $repo:String!, $number:Int!) { enablePullRequestAutoMerge(input:{pullRequestId: (repository(owner:$owner,name:$repo){ pullRequest(number:$number){ id } }).pullRequest.id, mergeMethod:SQUASH}) { clientMutationId } }' \
+            -F owner='kcc-casa' \
+            -F repo='homelab' \
+            -F number='${{ steps.create-pr.outputs.pr_number }}'
