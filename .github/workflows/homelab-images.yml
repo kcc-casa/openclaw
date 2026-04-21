@@ -13,6 +13,16 @@ on:
       - '.gitignore'
       - 'LICENSE'
   workflow_dispatch:
+    inputs:
+      skip_build:
+        description: Skip image build and only run promote-to-homelab using the supplied image
+        required: false
+        default: false
+        type: boolean
+      openclaw_base_image:
+        description: Existing OpenClaw base image to promote when skip_build is true
+        required: false
+        type: string
 
 concurrency:
   group: homelab-images-${{ github.ref }}
@@ -20,7 +30,7 @@ concurrency:
 
 jobs:
   build-and-publish:
-    if: ${{ startsWith(github.ref, 'refs/heads/homelab/release-') && (github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')) }}
+    if: ${{ startsWith(github.ref, 'refs/heads/homelab/release-') && (github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')) && !(github.event_name == 'workflow_dispatch' && inputs.skip_build) }}
     runs-on:
       - self-hosted
       - dragonsbreath
@@ -135,9 +145,46 @@ jobs:
           pull: true
           push: true
 
+  prepare-promote-inputs:
+    runs-on:
+      - self-hosted
+      - dragonsbreath
+      - docker
+      - openclaw
+    outputs:
+      image: ${{ steps.set.outputs.image }}
+      image_tag: ${{ steps.set.outputs.image_tag }}
+      short_sha: ${{ steps.set.outputs.short_sha }}
+    steps:
+      - name: Choose image input for promotion
+        id: set
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.skip_build }}" = "true" ]; then
+            image="${{ inputs.openclaw_base_image }}"
+            if [ -z "${image}" ]; then
+              echo "openclaw_base_image is required when skip_build=true" >&2
+              exit 1
+            fi
+            image_tag="${image##*:}"
+            short_sha="manual-${GITHUB_RUN_ID}"
+          else
+            image="${{ needs.build-and-publish.outputs.image }}"
+            image_tag="${{ needs.build-and-publish.outputs.image_tag }}"
+            short_sha="${{ needs.build-and-publish.outputs.short_sha }}"
+          fi
+          {
+            echo "image=${image}"
+            echo "image_tag=${image_tag}"
+            echo "short_sha=${short_sha}"
+          } >> "${GITHUB_OUTPUT}"
+
   promote-to-homelab:
-    needs: build-and-publish
-    if: ${{ needs.build-and-publish.result == 'success' }}
+    needs:
+      - build-and-publish
+      - prepare-promote-inputs
+    if: ${{ always() && startsWith(github.ref, 'refs/heads/homelab/release-') && ((github.event_name == 'workflow_dispatch' && inputs.skip_build && needs.prepare-promote-inputs.result == 'success') || (needs.build-and-publish.result == 'success' && needs.prepare-promote-inputs.result == 'success')) }}
     runs-on:
       - self-hosted
       - dragonsbreath
@@ -148,10 +195,10 @@ jobs:
       pull-requests: write
     env:
       HOMELAB_REPO: kcc-casa/homelab
-      HOMELAB_BRANCH: automation/openclaw-base-${{ needs.build-and-publish.outputs.short_sha }}
+      HOMELAB_BRANCH: automation/openclaw-base-${{ needs.prepare-promote-inputs.outputs.short_sha }}
       HOMELAB_BASE_BRANCH: main
       HOMELAB_BASE_IMAGE_FILE: images/openclaw/base-image.env
-      OPENCLAW_BASE_IMAGE: ${{ needs.build-and-publish.outputs.image }}
+      OPENCLAW_BASE_IMAGE: ${{ needs.prepare-promote-inputs.outputs.image }}
     steps:
       - name: Mint GitHub App token for homelab PR
         id: app-token
@@ -202,7 +249,7 @@ jobs:
           git config user.name "openclaw-bot[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "${HOMELAB_BASE_IMAGE_FILE}"
-          git commit -m "chore(openclaw): bump base image to ${{ needs.build-and-publish.outputs.image_tag }}"
+          git commit -m "chore(openclaw): bump base image to ${{ needs.prepare-promote-inputs.outputs.image_tag }}"
           git push --force-with-lease origin "${HOMELAB_BRANCH}"
 
       - name: Install GitHub CLI
@@ -229,7 +276,7 @@ jobs:
           set -euo pipefail
           cd homelab
           existing_pr="$(gh pr list --repo "${HOMELAB_REPO}" --head "${HOMELAB_BRANCH}" --json number --jq '.[0].number // empty')"
-          title="chore(openclaw): bump base image to ${{ needs.build-and-publish.outputs.image_tag }}"
+          title="chore(openclaw): bump base image to ${{ needs.prepare-promote-inputs.outputs.image_tag }}"
           body=$(printf '%s\n' \
             'Automated promotion from:' \
             '- repo: kcc-casa/openclaw' \
