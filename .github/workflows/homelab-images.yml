@@ -176,12 +176,7 @@ jobs:
         run: |
           set -euo pipefail
           cd homelab
-          python3 - <<'PY'
-from pathlib import Path
-import os
-path = Path("images/openclaw/base-image.env")
-path.write_text(f"OPENCLAW_BASE_IMAGE={os.environ['OPENCLAW_BASE_IMAGE']}\n", encoding="utf-8")
-PY
+          printf 'OPENCLAW_BASE_IMAGE=%s\n' "${OPENCLAW_BASE_IMAGE}" > "${HOMELAB_BASE_IMAGE_FILE}"
           printf 'Updated %s to %s\n' "${HOMELAB_BASE_IMAGE_FILE}" "${OPENCLAW_BASE_IMAGE}"
           cat "${HOMELAB_BASE_IMAGE_FILE}"
 
