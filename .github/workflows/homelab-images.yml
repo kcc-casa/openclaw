@@ -205,6 +205,10 @@ jobs:
           git commit -m "chore(openclaw): bump base image to ${{ needs.build-and-publish.outputs.image_tag }}"
           git push --force-with-lease origin "${HOMELAB_BRANCH}"
 
+      - name: Set up GitHub CLI
+        if: ${{ steps.diff-check.outputs.changed == 'true' }}
+        uses: cli/cli-action@v2
+
       - name: Create or update homelab PR
         if: ${{ steps.diff-check.outputs.changed == 'true' }}
         id: create-pr
