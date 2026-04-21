@@ -31,6 +31,7 @@ export type BlueBubblesNetworkConfig = {
 };
 
 export type BlueBubblesInboundTriageNotifyTarget = {
+  /** Live release-image trigger marker: 2026-04-21. */
   /** Explicit notification channel override, for example "slack". */
   channel?: string;
   /** Explicit delivery target override, for example "user:U02PG6MLXB8". */
