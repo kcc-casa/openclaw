@@ -146,6 +146,8 @@ jobs:
           push: true
 
   prepare-promote-inputs:
+    needs:
+      - build-and-publish
     runs-on:
       - self-hosted
       - dragonsbreath
