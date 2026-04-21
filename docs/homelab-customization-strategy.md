@@ -105,16 +105,18 @@ Example tag:
 
 ## Deployment strategy
 
-Keep deployment updates manual first.
+Automate the cross-repo handoff, keep the custom-image build in homelab, and keep GitOps write-back there.
 
-After a successful image build:
+After a successful fork image build:
 
-1. choose the specific produced image tag
-2. update `~/repos/homelab/gitops/base/openclaw/kustomization.yaml`
-3. let Argo CD sync
-4. validate runtime behavior
+1. publish the specific produced base image tag from `kcc-casa/openclaw`
+2. automatically open a PR in `kcc-casa/homelab` that updates `images/openclaw/base-image.env`
+3. enable auto-merge on that PR so normal homelab checks gate the transition
+4. let the homelab custom-image workflow rebuild the real runtime image with extra tooling
+5. let homelab continue writing the final deployed custom image tag into GitOps and syncing Argo CD
+6. validate runtime behavior
 
-Avoid automatic GitOps write-back from the fork workflow until the source-patch + release-pinned process has been exercised a few times successfully.
+This removes the manual repo-to-repo promotion step while preserving a reviewable Git boundary between the upstream-style base image and the real homelab runtime image.
 
 ## Rules of thumb
 
@@ -123,6 +125,7 @@ Avoid automatic GitOps write-back from the fork workflow until the source-patch 
 - Treat upstream releases as the unit of adoption.
 - Treat `homelab/release-*` branches as the durable source of truth for deployed custom behavior.
 - Keep each homelab-specific commit small and easy to replay onto the next release branch.
+- Do not manually edit homelab GitOps to point directly at a fork-built `release-*` base image tag. That tag belongs only in `images/openclaw/base-image.env`, where the homelab custom-image workflow consumes it.
 
 ## First concrete use case
 
