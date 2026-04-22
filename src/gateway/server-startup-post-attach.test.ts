@@ -21,6 +21,7 @@ const hoisted = vi.hoisted(() => {
     resolved: 0,
     failed: 0,
   }));
+  const getRuntimeConfig = vi.fn(() => ({}));
   return {
     startPluginServices,
     startGmailWatcherWithLogs,
@@ -38,6 +39,15 @@ const hoisted = vi.hoisted(() => {
     shouldWakeFromRestartSentinel,
     scheduleRestartSentinelWake,
     reconcilePendingSessionIdentities,
+    getRuntimeConfig,
+  };
+});
+
+vi.mock("../config/config.js", async () => {
+  const actual = await vi.importActual<typeof import("../config/config.js")>("../config/config.js");
+  return {
+    ...actual,
+    getRuntimeConfig: hoisted.getRuntimeConfig,
   };
 });
 
@@ -138,6 +148,8 @@ describe("startGatewayPostAttachRuntime", () => {
     hoisted.logGatewayStartup.mockClear();
     hoisted.scheduleSubagentOrphanRecovery.mockClear();
     hoisted.shouldWakeFromRestartSentinel.mockReturnValue(false);
+    hoisted.getRuntimeConfig.mockReset();
+    hoisted.getRuntimeConfig.mockReturnValue({});
     hoisted.scheduleRestartSentinelWake.mockClear();
     hoisted.reconcilePendingSessionIdentities.mockClear();
   });
@@ -219,6 +231,8 @@ describe("startGatewayPostAttachRuntime", () => {
     vi.useFakeTimers();
     hoisted.hasInternalHookListeners.mockReturnValue(true);
     const cfg = {} as never;
+    const runtimeCfg = { reloaded: true } as never;
+    hoisted.getRuntimeConfig.mockReturnValue(runtimeCfg);
     const deps = {} as never;
 
     try {
@@ -250,7 +264,7 @@ describe("startGatewayPostAttachRuntime", () => {
         "startup",
         "gateway:startup",
         {
-          cfg,
+          cfg: runtimeCfg,
           deps,
           workspaceDir: "/tmp/openclaw-workspace",
         },

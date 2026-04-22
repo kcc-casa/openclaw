@@ -11,6 +11,7 @@ const {
   requestHeartbeatNowMock,
   runHeartbeatOnceMock,
   loadConfigMock,
+  getRuntimeConfigMock,
   fetchWithSsrFGuardMock,
   runCronIsolatedAgentTurnMock,
   cleanupBrowserSessionsForLifecycleEndMock,
@@ -21,6 +22,7 @@ const {
     (...args: unknown[]) => Promise<{ status: "ran"; durationMs: number }>
   >(async () => ({ status: "ran", durationMs: 1 })),
   loadConfigMock: vi.fn(),
+  getRuntimeConfigMock: vi.fn(),
   fetchWithSsrFGuardMock: vi.fn(),
   runCronIsolatedAgentTurnMock: vi.fn(async () => ({ status: "ok" as const, summary: "ok" })),
   cleanupBrowserSessionsForLifecycleEndMock: vi.fn(async () => {}),
@@ -62,6 +64,7 @@ vi.mock("../config/config.js", async () => {
   return {
     ...actual,
     loadConfig: () => loadConfigMock(),
+    getRuntimeConfig: () => getRuntimeConfigMock(),
   };
 });
 
@@ -97,6 +100,7 @@ describe("buildGatewayCronService", () => {
     requestHeartbeatNowMock.mockClear();
     runHeartbeatOnceMock.mockClear();
     loadConfigMock.mockClear();
+    getRuntimeConfigMock.mockClear();
     fetchWithSsrFGuardMock.mockClear();
     runCronIsolatedAgentTurnMock.mockClear();
     cleanupBrowserSessionsForLifecycleEndMock.mockClear();
@@ -105,6 +109,7 @@ describe("buildGatewayCronService", () => {
   it("routes main-target jobs to the scoped session for enqueue + wake", async () => {
     const cfg = createCronConfig("server-cron");
     loadConfigMock.mockReturnValue(cfg);
+    getRuntimeConfigMock.mockReturnValue(cfg);
 
     const state = buildGatewayCronService({
       cfg,
@@ -140,9 +145,43 @@ describe("buildGatewayCronService", () => {
     }
   });
 
+  it("prefers runtime config for cron store path and enabled flag at startup", () => {
+    const startupCfg = createCronConfig("server-cron-startup");
+    const runtimeCfg = {
+      ...startupCfg,
+      cron: {
+        ...startupCfg.cron,
+        store: startupCfg.cron?.store?.replace("cron.json", "runtime-cron.json"),
+        enabled: false,
+      },
+    } as OpenClawConfig;
+    loadConfigMock.mockReturnValue(runtimeCfg);
+    getRuntimeConfigMock.mockReturnValue(runtimeCfg);
+
+    const state = buildGatewayCronService({
+      cfg: startupCfg,
+      deps: {} as CliDeps,
+      broadcast: () => {},
+    });
+    try {
+      const deps = (
+        state.cron as unknown as {
+          state?: {
+            deps?: { storePath?: string; cronEnabled?: boolean };
+          };
+        }
+      ).state?.deps;
+      expect(deps?.storePath).toBe(runtimeCfg.cron?.store);
+      expect(deps?.cronEnabled).toBe(false);
+    } finally {
+      state.cron.stop();
+    }
+  });
+
   it("forwards heartbeat overrides through the cron wake adapter", () => {
     const cfg = createCronConfig("server-cron-heartbeat-override");
     loadConfigMock.mockReturnValue(cfg);
+    getRuntimeConfigMock.mockReturnValue(cfg);
 
     const state = buildGatewayCronService({
       cfg,
@@ -185,6 +224,7 @@ describe("buildGatewayCronService", () => {
   it("preserves trust downgrades when cron enqueues system events", () => {
     const cfg = createCronConfig("server-cron-untrusted");
     loadConfigMock.mockReturnValue(cfg);
+    getRuntimeConfigMock.mockReturnValue(cfg);
 
     const state = buildGatewayCronService({
       cfg,
@@ -229,6 +269,7 @@ describe("buildGatewayCronService", () => {
   it("blocks private webhook URLs via SSRF-guarded fetch", async () => {
     const cfg = createCronConfig("server-cron-ssrf");
     loadConfigMock.mockReturnValue(cfg);
+    getRuntimeConfigMock.mockReturnValue(cfg);
     fetchWithSsrFGuardMock.mockRejectedValue(
       new SsrFBlockedError("Blocked: resolves to private/internal/special-use IP address"),
     );
@@ -282,6 +323,7 @@ describe("buildGatewayCronService", () => {
       },
     } as OpenClawConfig;
     loadConfigMock.mockReturnValue(cfg);
+    getRuntimeConfigMock.mockReturnValue(cfg);
 
     const state = buildGatewayCronService({
       cfg,
@@ -318,6 +360,7 @@ describe("buildGatewayCronService", () => {
   it("uses a dedicated cron session key for isolated jobs with model overrides", async () => {
     const cfg = createCronConfig("server-cron-isolated-key");
     loadConfigMock.mockReturnValue(cfg);
+    getRuntimeConfigMock.mockReturnValue(cfg);
 
     const state = buildGatewayCronService({
       cfg,
@@ -394,6 +437,7 @@ describe("buildGatewayCronService", () => {
       },
     } as OpenClawConfig;
     loadConfigMock.mockReturnValue(reloadedCfg);
+    getRuntimeConfigMock.mockReturnValue(startupCfg);
 
     const state = buildGatewayCronService({
       cfg: startupCfg,
@@ -482,6 +526,7 @@ describe("buildGatewayCronService", () => {
       },
     } as OpenClawConfig;
     loadConfigMock.mockReturnValue(reloadedCfg);
+    getRuntimeConfigMock.mockReturnValue(startupCfg);
 
     const state = buildGatewayCronService({
       cfg: startupCfg,

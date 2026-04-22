@@ -52,13 +52,15 @@ import { doctorHandlers } from "./doctor.js";
 
 const invokeDoctorMemoryStatus = async (
   respond: ReturnType<typeof vi.fn>,
-  context?: { cron?: { list?: ReturnType<typeof vi.fn> } },
+  context?: { cron?: { list?: ReturnType<typeof vi.fn> }; deps?: { cfg?: OpenClawConfig } },
 ) => {
   const cronList =
     context?.cron?.list ??
     vi.fn(async () => {
       return [];
     });
+  const cfg = context?.deps?.cfg ?? loadConfig();
+  console.error("DBG invokeDoctorMemoryStatus cfg", JSON.stringify(cfg));
   await doctorHandlers["doctor.memory.status"]({
     req: {} as never,
     params: {} as never,
@@ -67,73 +69,94 @@ const invokeDoctorMemoryStatus = async (
       cron: {
         list: cronList,
       },
+      deps: {
+        cfg,
+      },
     } as never,
     client: null,
     isWebchatConnect: () => false,
   });
 };
 
-const invokeDoctorMemoryDreamDiary = async (respond: ReturnType<typeof vi.fn>) => {
+const invokeDoctorMemoryDreamDiary = async (
+  respond: ReturnType<typeof vi.fn>,
+  cfg: OpenClawConfig = {} as OpenClawConfig,
+) => {
   await doctorHandlers["doctor.memory.dreamDiary"]({
     req: {} as never,
     params: {} as never,
     respond: respond as never,
-    context: {} as never,
+    context: { deps: { cfg } } as never,
     client: null,
     isWebchatConnect: () => false,
   });
 };
 
-const invokeDoctorMemoryBackfillDreamDiary = async (respond: ReturnType<typeof vi.fn>) => {
+const invokeDoctorMemoryBackfillDreamDiary = async (
+  respond: ReturnType<typeof vi.fn>,
+  cfg: OpenClawConfig = {} as OpenClawConfig,
+) => {
   await doctorHandlers["doctor.memory.backfillDreamDiary"]({
     req: {} as never,
     params: {} as never,
     respond: respond as never,
-    context: {} as never,
+    context: { deps: { cfg } } as never,
     client: null,
     isWebchatConnect: () => false,
   });
 };
 
-const invokeDoctorMemoryResetDreamDiary = async (respond: ReturnType<typeof vi.fn>) => {
+const invokeDoctorMemoryResetDreamDiary = async (
+  respond: ReturnType<typeof vi.fn>,
+  cfg: OpenClawConfig = {} as OpenClawConfig,
+) => {
   await doctorHandlers["doctor.memory.resetDreamDiary"]({
     req: {} as never,
     params: {} as never,
     respond: respond as never,
-    context: {} as never,
+    context: { deps: { cfg } } as never,
     client: null,
     isWebchatConnect: () => false,
   });
 };
 
-const invokeDoctorMemoryResetGroundedShortTerm = async (respond: ReturnType<typeof vi.fn>) => {
+const invokeDoctorMemoryResetGroundedShortTerm = async (
+  respond: ReturnType<typeof vi.fn>,
+  cfg: OpenClawConfig = {} as OpenClawConfig,
+) => {
   await doctorHandlers["doctor.memory.resetGroundedShortTerm"]({
     req: {} as never,
     params: {} as never,
     respond: respond as never,
-    context: {} as never,
+    context: { deps: { cfg } } as never,
     client: null,
     isWebchatConnect: () => false,
   });
 };
 
-const invokeDoctorMemoryRepairDreamingArtifacts = async (respond: ReturnType<typeof vi.fn>) => {
+const invokeDoctorMemoryRepairDreamingArtifacts = async (
+  respond: ReturnType<typeof vi.fn>,
+  cfg: OpenClawConfig = {} as OpenClawConfig,
+) => {
   await doctorHandlers["doctor.memory.repairDreamingArtifacts"]({
     req: {} as never,
     params: {} as never,
     respond: respond as never,
-    context: {} as never,
+    context: { deps: { cfg } } as never,
     client: null,
     isWebchatConnect: () => false,
   });
 };
 
-const invokeDoctorMemoryDedupeDreamDiary = async (respond: ReturnType<typeof vi.fn>) => {
+const invokeDoctorMemoryDedupeDreamDiary = async (
+  respond: ReturnType<typeof vi.fn>,
+  cfg: OpenClawConfig = {} as OpenClawConfig,
+) => {
   await doctorHandlers["doctor.memory.dedupeDreamDiary"]({
     req: {} as never,
     params: {} as never,
     respond: respond as never,
-    context: {} as never,
+    context: { deps: { cfg } } as never,
     client: null,
     isWebchatConnect: () => false,
   });
@@ -748,6 +771,8 @@ describe("doctor.memory.status", () => {
 
 describe("doctor.memory dream actions", () => {
   it("clears grounded-only staged short-term entries without touching the diary", async () => {
+    const runtimeCfg = { runtime: true } as OpenClawConfig;
+    loadConfig.mockReturnValue({ stale: true } as OpenClawConfig);
     resolveAgentWorkspaceDir.mockReturnValue("/tmp/openclaw");
     removeGroundedShortTermCandidates.mockResolvedValue({
       removed: 3,
@@ -755,8 +780,9 @@ describe("doctor.memory dream actions", () => {
     });
     const respond = vi.fn();
 
-    await invokeDoctorMemoryResetGroundedShortTerm(respond);
+    await invokeDoctorMemoryResetGroundedShortTerm(respond, runtimeCfg);
 
+    expect(resolveAgentWorkspaceDir).toHaveBeenCalledWith(runtimeCfg, "main");
     expect(removeGroundedShortTermCandidates).toHaveBeenCalledWith({
       workspaceDir: "/tmp/openclaw",
     });
