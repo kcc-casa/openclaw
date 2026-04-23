@@ -211,6 +211,55 @@ Per-group configuration:
 }
 ```
 
+### Inbound triage mode
+
+If you want BlueBubbles inbound to behave more like a notification / triage stream than an automatic reply lane, enable `inboundTriage`.
+
+When enabled, OpenClaw suppresses normal reply dispatch for matching inbound messages and instead enqueues system events, either immediately or after a holdback delay.
+
+Supported controls:
+
+- `immediateKeywords`: words/phrases that trigger immediate notification
+- `vipSenderIds`: senders that use the VIP holdback window
+- `vipDelayMinutes`: delay before surfacing VIP senders
+- `unknownSenderDelayMinutes`: delay before surfacing non-VIP senders
+- `notify`: optional explicit delivery destination override
+- `repeatedSenderImmediate`: escalate to immediate notification when the same sender repeats within a rolling window
+- `suppressOtp`: suppress obvious OTP / 2FA traffic
+- `suppressWorkAfterHours`: suppress work-like messages outside configured work hours
+
+Example:
+
+```json5
+{
+  channels: {
+    bluebubbles: {
+      inboundTriage: {
+        enabled: true,
+        immediateKeywords: ["urgent", "call me", "school"],
+        vipSenderIds: ["+15551234567"],
+        vipDelayMinutes: 10,
+        unknownSenderDelayMinutes: 5,
+        notify: {
+          channel: "slack",
+          to: "user:U02PG6MLXB8",
+        },
+        repeatedSenderImmediate: {
+          enabled: true,
+          count: 3,
+          windowMinutes: 10,
+          appliesTo: ["vip", "unknown"],
+        },
+        suppressOtp: true,
+        suppressWorkAfterHours: true,
+        workHoursStart: 9,
+        workHoursEnd: 17,
+      },
+    },
+  },
+}
+```
+
 ### Command gating
 
 - Control commands (e.g., `/config`, `/model`) require authorization.
