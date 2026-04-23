@@ -122,6 +122,29 @@ describe("normalizeWebhookMessage", () => {
   });
 });
 
+it("parses string tapback metadata on message payloads", () => {
+  const result = normalizeWebhookMessage({
+    type: "new-message",
+    data: {
+      guid: "msg-tapback-1",
+      text: 'Loved "hello"',
+      isGroup: false,
+      isFromMe: false,
+      handle: { address: "+15551234567" },
+      chatGuid: "iMessage;-;+15551234567",
+      associatedMessageGuid: "p:0/original-1",
+      associatedMessageType: 2000,
+      associatedMessageEmoji: "❤️",
+      isTapback: true,
+    },
+  });
+
+  expect(result).not.toBeNull();
+  expect(result?.isTapback).toBe(true);
+  expect(result?.associatedMessageGuid).toBe("p:0/original-1");
+  expect(result?.associatedMessageEmoji).toBe("❤️");
+});
+
 describe("normalizeWebhookReaction", () => {
   it("falls back to DM chatGuid handle when reaction sender handle is missing", () => {
     const result = normalizeWebhookReaction({
@@ -139,4 +162,19 @@ describe("normalizeWebhookReaction", () => {
     expect(result?.messageId).toBe("p:0/msg-1");
     expect(result?.action).toBe("added");
   });
+});
+
+it("ignores read-status style payloads that are not real reactions", () => {
+  const result = normalizeWebhookReaction({
+    type: "chat-read-status-changed",
+    data: {
+      guid: "msg-read-1",
+      isGroup: false,
+      isFromMe: false,
+      handle: { address: "+15551234567" },
+      chatGuid: "iMessage;-;+15551234567",
+    },
+  });
+
+  expect(result).toBeNull();
 });
