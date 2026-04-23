@@ -1,0 +1,325 @@
+name: homelab-images
+
+on:
+  push:
+    branches:
+      - 'homelab/release-*'
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '**/*.mdx'
+      - '.agents/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.gitignore'
+      - 'LICENSE'
+  workflow_dispatch:
+    inputs:
+      skip_build:
+        description: Skip image build and only run promote-to-homelab using the supplied image
+        required: false
+        default: false
+        type: boolean
+      openclaw_base_image:
+        description: Existing OpenClaw base image to promote when skip_build is true
+        required: false
+        type: string
+
+concurrency:
+  group: homelab-images-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-publish:
+    if: ${{ startsWith(github.ref, 'refs/heads/homelab/release-') && (github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')) && !(github.event_name == 'workflow_dispatch' && inputs.skip_build) }}
+    runs-on:
+      - self-hosted
+      - dragonsbreath
+      - docker
+      - openclaw
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      IMAGE_REPO: cr.home.kcc.casa/openclaw/openclaw
+      VAULT_ADDR: https://vault.cluster.kcc.casa
+      VAULT_AUTH_PATH: github-actions
+      VAULT_ROLE: kcc-casa-openclaw-images
+      VAULT_AUDIENCE: https://github.com/kcc-casa
+      DOCKER_BUILDKIT: "1"
+    outputs:
+      image_tag: ${{ steps.compute-tags.outputs.image_tag }}
+      image: ${{ steps.compute-tags.outputs.image }}
+      short_sha: ${{ steps.compute-tags.outputs.short_sha }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Read registry credentials from Vault
+        id: vault
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          vault_audience_encoded="$(jq -rn --arg value "${VAULT_AUDIENCE}" '$value | @uri')"
+
+          oidc_token="$(
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${vault_audience_encoded}" \
+            | jq -er '.value'
+          )"
+
+          vault_token="$(
+            jq -cn --arg role "${VAULT_ROLE}" --arg jwt "${oidc_token}" '{role: $role, jwt: $jwt}' \
+            | curl --fail --silent --show-error \
+                -H 'Content-Type: application/json' \
+                --data @- \
+                "${VAULT_ADDR}/v1/auth/${VAULT_AUTH_PATH}/login" \
+            | jq -er '.auth.client_token'
+          )"
+
+          registry_auth="$(
+            curl --fail --silent --show-error \
+              -H "X-Vault-Token: ${vault_token}" \
+              "${VAULT_ADDR}/v1/secret/data/unraid/registry/auth"
+          )"
+
+          registry_username="$(printf '%s' "${registry_auth}" | jq -er '.data.data.machine_username')"
+          registry_password="$(printf '%s' "${registry_auth}" | jq -er '.data.data.machine_password')"
+
+          echo "::add-mask::${vault_token}"
+          echo "::add-mask::${registry_username}"
+          echo "::add-mask::${registry_password}"
+
+          {
+            echo "REGISTRY_USERNAME<<EOF"
+            printf '%s\n' "${registry_username}"
+            echo "EOF"
+            echo "REGISTRY_PASSWORD<<EOF"
+            printf '%s\n' "${registry_password}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Log in to registry
+        shell: bash
+        env:
+          REGISTRY_USERNAME: ${{ steps.vault.outputs.REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ steps.vault.outputs.REGISTRY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${REGISTRY_PASSWORD}" | docker login cr.home.kcc.casa --username "${REGISTRY_USERNAME}" --password-stdin
+
+      - name: Compute immutable image tag
+        id: compute-tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          short_sha="${GITHUB_SHA::12}"
+          branch_name="${GITHUB_REF_NAME#homelab/}"
+          branch_slug="${branch_name//\//-}"
+          image_tag="${branch_slug}-${short_sha}"
+          image="${IMAGE_REPO}:${image_tag}"
+          {
+            echo "IMAGE_TAG=${image_tag}"
+            echo "IMAGE=${image}"
+          } >> "${GITHUB_ENV}"
+          {
+            echo "image_tag=${image_tag}"
+            echo "image=${image}"
+            echo "short_sha=${short_sha}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Build and push OpenClaw image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          tags: ${{ env.IMAGE }}
+          provenance: false
+          pull: true
+          push: true
+
+  prepare-promote-inputs:
+    needs:
+      - build-and-publish
+    runs-on:
+      - self-hosted
+      - dragonsbreath
+      - docker
+      - openclaw
+    outputs:
+      image: ${{ steps.set.outputs.image }}
+      image_tag: ${{ steps.set.outputs.image_tag }}
+      short_sha: ${{ steps.set.outputs.short_sha }}
+    steps:
+      - name: Choose image input for promotion
+        id: set
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.skip_build }}" = "true" ]; then
+            image="${{ inputs.openclaw_base_image }}"
+            if [ -z "${image}" ]; then
+              echo "openclaw_base_image is required when skip_build=true" >&2
+              exit 1
+            fi
+            image_tag="${image##*:}"
+            short_sha="manual-${GITHUB_RUN_ID}"
+          else
+            image="${{ needs.build-and-publish.outputs.image }}"
+            image_tag="${{ needs.build-and-publish.outputs.image_tag }}"
+            short_sha="${{ needs.build-and-publish.outputs.short_sha }}"
+          fi
+          {
+            echo "image=${image}"
+            echo "image_tag=${image_tag}"
+            echo "short_sha=${short_sha}"
+          } >> "${GITHUB_OUTPUT}"
+
+  promote-to-homelab:
+    needs:
+      - build-and-publish
+      - prepare-promote-inputs
+    if: ${{ always() && startsWith(github.ref, 'refs/heads/homelab/release-') && ((github.event_name == 'workflow_dispatch' && inputs.skip_build && needs.prepare-promote-inputs.result == 'success') || (needs.build-and-publish.result == 'success' && needs.prepare-promote-inputs.result == 'success')) }}
+    runs-on:
+      - self-hosted
+      - dragonsbreath
+      - docker
+      - openclaw
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      HOMELAB_REPO: kcc-casa/homelab
+      HOMELAB_BRANCH: automation/openclaw-base-${{ needs.prepare-promote-inputs.outputs.short_sha }}
+      HOMELAB_BASE_BRANCH: main
+      HOMELAB_BASE_IMAGE_FILE: images/openclaw/base-image.env
+      OPENCLAW_BASE_IMAGE: ${{ needs.prepare-promote-inputs.outputs.image }}
+    steps:
+      - name: Mint GitHub App token for homelab PR
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.HOMELAB_AUTOMATION_APP_ID }}
+          private-key: ${{ secrets.HOMELAB_AUTOMATION_APP_PRIVATE_KEY }}
+          owner: kcc-casa
+          repositories: homelab
+
+      - name: Checkout homelab
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ env.HOMELAB_REPO }}
+          ref: ${{ env.HOMELAB_BASE_BRANCH }}
+          token: ${{ steps.app-token.outputs.token }}
+          path: homelab
+          fetch-depth: 0
+
+      - name: Update tracked base image
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd homelab
+          printf 'OPENCLAW_BASE_IMAGE=%s\n' "${OPENCLAW_BASE_IMAGE}" > "${HOMELAB_BASE_IMAGE_FILE}"
+          printf 'Updated %s to %s\n' "${HOMELAB_BASE_IMAGE_FILE}" "${OPENCLAW_BASE_IMAGE}"
+          cat "${HOMELAB_BASE_IMAGE_FILE}"
+
+      - name: Stop if no homelab change is needed
+        id: diff-check
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd homelab
+          if git diff --quiet -- "${HOMELAB_BASE_IMAGE_FILE}"; then
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          echo "changed=true" >> "${GITHUB_OUTPUT}"
+
+      - name: Create promotion branch and push
+        if: ${{ steps.diff-check.outputs.changed == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd homelab
+          git checkout -b "${HOMELAB_BRANCH}"
+          git config user.name "openclaw-bot[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "${HOMELAB_BASE_IMAGE_FILE}"
+          git commit -m "chore(openclaw): bump base image to ${{ needs.prepare-promote-inputs.outputs.image_tag }}"
+          git push --force-with-lease origin "${HOMELAB_BRANCH}"
+
+      - name: Create or update homelab PR
+        if: ${{ steps.diff-check.outputs.changed == 'true' }}
+        id: create-pr
+        shell: bash
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          cd homelab
+          auth_header="Authorization: Bearer ${APP_TOKEN}"
+          accept_header='Accept: application/vnd.github+json'
+          existing_pr="$(curl --fail --silent --show-error \
+            -H "${auth_header}" \
+            -H "${accept_header}" \
+            "https://api.github.com/repos/${HOMELAB_REPO}/pulls?state=open&head=kcc-casa:${HOMELAB_BRANCH}" \
+            | jq -r '.[0].number // empty')"
+          title="chore(openclaw): bump base image to ${{ needs.prepare-promote-inputs.outputs.image_tag }}"
+          body=$(printf '%s\n' \
+            'Automated promotion from:' \
+            '- repo: kcc-casa/openclaw' \
+            "- branch: ${GITHUB_REF_NAME}" \
+            "- source commit: ${GITHUB_SHA}" \
+            "- published base image: ${OPENCLAW_BASE_IMAGE}" \
+            '' \
+            "This PR updates \\`${HOMELAB_BASE_IMAGE_FILE}\\` so the homelab custom-image pipeline can rebuild the real runtime image and continue its normal GitOps write-back path.")
+          if [ -n "${existing_pr}" ]; then
+            jq -n --arg title "${title}" --arg body "${body}" '{title:$title, body:$body}' \
+              | curl --fail --silent --show-error \
+                  -X PATCH \
+                  -H "${auth_header}" \
+                  -H "${accept_header}" \
+                  -H 'Content-Type: application/json' \
+                  --data @- \
+                  "https://api.github.com/repos/${HOMELAB_REPO}/pulls/${existing_pr}" >/dev/null
+            echo "pr_number=${existing_pr}" >> "${GITHUB_OUTPUT}"
+          else
+            pr_number="$(jq -n --arg title "${title}" --arg head "${HOMELAB_BRANCH}" --arg base "${HOMELAB_BASE_BRANCH}" --arg body "${body}" '{title:$title, head:$head, base:$base, body:$body}' \
+              | curl --fail --silent --show-error \
+                  -X POST \
+                  -H "${auth_header}" \
+                  -H "${accept_header}" \
+                  -H 'Content-Type: application/json' \
+                  --data @- \
+                  "https://api.github.com/repos/${HOMELAB_REPO}/pulls" \
+              | jq -r '.number')"
+            echo "pr_number=${pr_number}" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Enable PR auto-merge
+        if: ${{ steps.diff-check.outputs.changed == 'true' }}
+        shell: bash
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          auth_header="Authorization: Bearer ${APP_TOKEN}"
+          pr_id="$(curl --fail --silent --show-error \
+            -H "${auth_header}" \
+            -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/kcc-casa/homelab/pulls/${{ steps.create-pr.outputs.pr_number }}" \
+            | jq -r '.node_id')"
+          jq -n --arg pr_id "${pr_id}" '{query:"mutation($prId:ID!){ enablePullRequestAutoMerge(input:{pullRequestId:$prId, mergeMethod:SQUASH}) { clientMutationId } }", variables:{prId:$pr_id}}' \
+            | curl --fail --silent --show-error \
+                -X POST \
+                -H "${auth_header}" \
+                -H 'Content-Type: application/json' \
+                -H 'Accept: application/vnd.github+json' \
+                --data @- \
+                https://api.github.com/graphql >/dev/null

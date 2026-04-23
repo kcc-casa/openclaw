@@ -1,0 +1,138 @@
+name: homelab-promote-debug
+
+on:
+  workflow_dispatch:
+    inputs:
+      openclaw_base_image:
+        description: Base image to promote into homelab images/openclaw/base-image.env
+        required: true
+        type: string
+      homelab_base_branch:
+        description: Homelab target branch
+        required: false
+        default: main
+        type: string
+
+concurrency:
+  group: homelab-promote-debug-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  promote-to-homelab:
+    runs-on:
+      - self-hosted
+      - dragonsbreath
+      - docker
+      - openclaw
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      HOMELAB_REPO: kcc-casa/homelab
+      HOMELAB_BRANCH: automation/openclaw-debug-${{ github.run_id }}
+      HOMELAB_BASE_BRANCH: ${{ inputs.homelab_base_branch }}
+      HOMELAB_BASE_IMAGE_FILE: images/openclaw/base-image.env
+      OPENCLAW_BASE_IMAGE: ${{ inputs.openclaw_base_image }}
+    steps:
+      - name: Mint GitHub App token for homelab PR
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.HOMELAB_AUTOMATION_APP_ID }}
+          private-key: ${{ secrets.HOMELAB_AUTOMATION_APP_PRIVATE_KEY }}
+          owner: kcc-casa
+          repositories: homelab
+
+      - name: Checkout homelab
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ env.HOMELAB_REPO }}
+          ref: ${{ env.HOMELAB_BASE_BRANCH }}
+          token: ${{ steps.app-token.outputs.token }}
+          path: homelab
+          fetch-depth: 0
+
+      - name: Update tracked base image
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd homelab
+          printf 'OPENCLAW_BASE_IMAGE=%s\n' "${OPENCLAW_BASE_IMAGE}" > "${HOMELAB_BASE_IMAGE_FILE}"
+          printf 'Updated %s to %s\n' "${HOMELAB_BASE_IMAGE_FILE}" "${OPENCLAW_BASE_IMAGE}"
+          cat "${HOMELAB_BASE_IMAGE_FILE}"
+
+      - name: Stop if no homelab change is needed
+        id: diff-check
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd homelab
+          if git diff --quiet -- "${HOMELAB_BASE_IMAGE_FILE}"; then
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          echo "changed=true" >> "${GITHUB_OUTPUT}"
+
+      - name: Create promotion branch and push
+        if: ${{ steps.diff-check.outputs.changed == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd homelab
+          git checkout -b "${HOMELAB_BRANCH}"
+          git config user.name "openclaw-bot[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "${HOMELAB_BASE_IMAGE_FILE}"
+          git commit -m "chore(openclaw): debug bump base image"
+          git push --force-with-lease origin "${HOMELAB_BRANCH}"
+
+      - name: Install GitHub CLI
+        if: ${{ steps.diff-check.outputs.changed == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          type gh >/dev/null 2>&1 && exit 0
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+            | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg >/dev/null
+          sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+            | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y gh
+
+      - name: Create or update homelab PR
+        if: ${{ steps.diff-check.outputs.changed == 'true' }}
+        id: create-pr
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          cd homelab
+          existing_pr="$(gh pr list --repo "${HOMELAB_REPO}" --head "${HOMELAB_BRANCH}" --json number --jq '.[0].number // empty')"
+          title="chore(openclaw): debug bump base image"
+          body=$(printf '%s\n' \
+            'Debug promotion from workflow_dispatch:' \
+            "- source ref: ${GITHUB_REF_NAME}" \
+            "- source commit: ${GITHUB_SHA}" \
+            "- published base image: ${OPENCLAW_BASE_IMAGE}")
+          if [ -n "${existing_pr}" ]; then
+            gh pr edit "${existing_pr}" --repo "${HOMELAB_REPO}" --title "${title}" --body "${body}"
+            echo "pr_number=${existing_pr}" >> "${GITHUB_OUTPUT}"
+          else
+            pr_number="$(gh pr create --repo "${HOMELAB_REPO}" --base "${HOMELAB_BASE_BRANCH}" --head "${HOMELAB_BRANCH}" --title "${title}" --body "${body}")"
+            pr_number="${pr_number##*/}"
+            echo "pr_number=${pr_number}" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Enable PR auto-merge
+        if: ${{ steps.diff-check.outputs.changed == 'true' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          gh pr merge "${{ steps.create-pr.outputs.pr_number }}" \
+            --repo "${HOMELAB_REPO}" \
+            --auto \
+            --squash
