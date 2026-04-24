@@ -36,6 +36,49 @@ export type BlueBubblesNetworkConfig = {
   dangerouslyAllowPrivateNetwork?: boolean;
 };
 
+export type BlueBubblesInboundTriageNotifyTarget = {
+  /** Explicit notification channel override, for example "slack". */
+  channel?: string;
+  /** Explicit delivery target override, for example "user:U02PG6MLXB8". */
+  to?: string;
+  /** Optional account id for the explicit notification channel. */
+  accountId?: string;
+};
+
+export type BlueBubblesInboundTriageConfig = {
+  /** If true, treat BlueBubbles inbound as a triage stream and suppress automatic reply dispatch. */
+  enabled?: boolean;
+  /** Notify immediately for case-insensitive keyword matches. */
+  immediateKeywords?: string[];
+  /** Delay notifications for known senders before surfacing them. */
+  vipSenderIds?: string[];
+  /** Holdback window in minutes for VIP senders before surfacing them. */
+  vipDelayMinutes?: number;
+  /** Delay notifications for unknown senders before surfacing them. */
+  unknownSenderDelayMinutes?: number;
+  /** Optional explicit notification destination override for triage events. */
+  notify?: BlueBubblesInboundTriageNotifyTarget;
+  /** Optional repeated-sender immediate escalation rules. */
+  repeatedSenderImmediate?: {
+    /** Enable repeated-sender immediate escalation. */
+    enabled?: boolean;
+    /** Trigger immediate escalation when this many messages arrive within the window. */
+    count?: number;
+    /** Rolling window, in minutes, used to count repeated inbound messages. */
+    windowMinutes?: number;
+    /** Which sender classes repeated escalation applies to. */
+    appliesTo?: Array<"vip" | "unknown">;
+  };
+  /** Suppress obvious OTP / 2FA code traffic from notification surfacing. */
+  suppressOtp?: boolean;
+  /** Suppress after-hours work-message notifications unless another higher-priority rule fires. */
+  suppressWorkAfterHours?: boolean;
+  /** Start of work hours in 24h local time for after-hours suppression. */
+  workHoursStart?: number;
+  /** End of work hours in 24h local time for after-hours suppression. */
+  workHoursEnd?: number;
+};
+
 export type BlueBubblesAccountConfig = {
   /** Optional display name for this account (used in CLI/UI lists). */
   name?: string;
@@ -99,6 +142,8 @@ export type BlueBubblesAccountConfig = {
   network?: BlueBubblesNetworkConfig;
   /** Per-group configuration keyed by chat GUID or identifier. */
   groups?: Record<string, BlueBubblesGroupConfig>;
+  /** Optional inbound triage mode that surfaces system events instead of auto-replying. */
+  inboundTriage?: BlueBubblesInboundTriageConfig;
   /** Per-action tool gating (default: true for all). */
   actions?: BlueBubblesActionConfig;
   /** Channel health monitor overrides for this channel/account. */
@@ -171,7 +216,7 @@ export function buildBlueBubblesApiUrl(params: {
 let _fetchGuard = fetchWithSsrFGuard;
 
 /** @internal Replace the SSRF fetch guard in tests. */
-export function _setFetchGuardForTesting(impl: typeof fetchWithSsrFGuard | null): void {
+export function _setFetchGuardForTesting(impl: (typeof fetchWithSsrFGuard & object) | null): void {
   _fetchGuard = impl ?? fetchWithSsrFGuard;
 }
 
