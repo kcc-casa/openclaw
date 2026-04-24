@@ -22,7 +22,7 @@ jobs:
     permissions:
       issues: write
       pull-requests: write
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: [self-hosted, Linux, X64, dragonsbreath, docker, kcc, kcc-medium]
     steps:
       - uses: actions/create-github-app-token@v2
         id: app-token
