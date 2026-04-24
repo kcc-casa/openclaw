@@ -1,0 +1,16 @@
+name: openclaw-test-canary
+
+on:
+  workflow_dispatch:
+
+jobs:
+  canary:
+    runs-on:
+      [self-hosted, Linux, X64, dragonsbreath, docker, openclaw-test, canary]
+    steps:
+      - name: Echo runner context
+        run: |
+          echo "runner=${RUNNER_NAME:-unknown}"
+          uname -a
+      - name: Docker version
+        run: docker version
