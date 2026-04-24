@@ -23,7 +23,7 @@ jobs:
     permissions:
       contents: read
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
-    runs-on: [self-hosted, Linux, X64, dragonsbreath, docker, kcc, kcc-small]
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     timeout-minutes: 20
     outputs:
       docs_only: ${{ steps.manifest.outputs.docs_only }}
@@ -303,7 +303,7 @@ jobs:
     permissions:
       contents: read
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
-    runs-on: [self-hosted, Linux, X64, dragonsbreath, docker, kcc, kcc-medium]
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     timeout-minutes: 20
     env:
       PRE_COMMIT_CACHE_KEY_SUFFIX: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
