@@ -3,6 +3,7 @@ import type { ResolvedBlueBubblesAccount } from "./accounts.js";
 import { fetchBlueBubblesHistory } from "./history.js";
 import { createBlueBubblesDebounceRegistry } from "./monitor-debounce.js";
 import type { NormalizedWebhookMessage } from "./monitor-normalize.js";
+import { resetBlueBubblesTriageStateForTest } from "./monitor-processing.js";
 import { resetBlueBubblesSelfChatCache } from "./monitor-self-chat-cache.js";
 import { resolveBlueBubblesMessageId } from "./monitor.js";
 import {
@@ -283,6 +284,7 @@ describe("BlueBubbles webhook monitor", () => {
       buildMentionRegexesMock: mockBuildMentionRegexes,
       extraReset: () => {
         resetBlueBubblesSelfChatCache();
+        resetBlueBubblesTriageStateForTest();
         resetBlueBubblesParticipantContactNameCacheForTest();
         setBlueBubblesParticipantContactDepsForTest();
       },
@@ -567,6 +569,304 @@ describe("BlueBubbles webhook monitor", () => {
       await dispatchWebhookPayload(payload);
 
       expect(mockDispatchReplyWithBufferedBlockDispatcher).toHaveBeenCalled();
+    });
+  });
+
+  describe("inbound triage mode", () => {
+    it("suppresses normal reply dispatch and enqueues immediate triage notification for keyword matches", async () => {
+      mockEnqueueSystemEvent.mockClear();
+      setupWebhookTarget({
+        account: createMockAccount({
+          inboundTriage: {
+            enabled: true,
+            immediateKeywords: ["school"],
+          },
+        }),
+      });
+
+      const payload = createTimestampedNewMessagePayloadForTest({
+        text: "school called, please pick up Eve",
+        senderName: "Jo",
+      });
+
+      await dispatchWebhookPayload(payload);
+
+      expect(mockDispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
+      expect(mockEnqueueSystemEvent).toHaveBeenCalledWith(
+        expect.stringContaining("[bluebubbles triage] immediate"),
+        expect.objectContaining({
+          contextKey: expect.stringContaining("bluebubbles:triage:default:"),
+        }),
+      );
+    });
+
+    it("routes immediate triage notifications to explicit deliveryContext when configured", async () => {
+      mockEnqueueSystemEvent.mockClear();
+      setupWebhookTarget({
+        account: createMockAccount({
+          inboundTriage: {
+            enabled: true,
+            immediateKeywords: ["school"],
+            notify: {
+              channel: "slack",
+              to: "user:U02PG6MLXB8",
+              accountId: "default",
+            },
+          },
+        }),
+      });
+
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          text: "school called, please pick up Eve",
+          senderName: "Jo",
+        }),
+      );
+
+      expect(mockDispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
+      expect(mockEnqueueSystemEvent).toHaveBeenCalledWith(
+        expect.stringContaining("[bluebubbles triage] immediate"),
+        expect.objectContaining({
+          sessionKey: DEFAULT_RESOLVED_AGENT_ROUTE.mainSessionKey,
+          deliveryContext: {
+            channel: "slack",
+            to: "user:U02PG6MLXB8",
+            accountId: "default",
+          },
+        }),
+      );
+    });
+
+    it("suppresses OTP messages when triage mode is enabled", async () => {
+      mockEnqueueSystemEvent.mockClear();
+      setupWebhookTarget({
+        account: createMockAccount({
+          inboundTriage: {
+            enabled: true,
+            suppressOtp: true,
+          },
+        }),
+      });
+
+      const payload = createTimestampedNewMessagePayloadForTest({
+        text: "Your verification code is 123456",
+      });
+
+      await dispatchWebhookPayload(payload);
+
+      expect(mockDispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
+      expect(mockEnqueueSystemEvent).not.toHaveBeenCalled();
+    });
+
+    it("schedules VIP senders as delayed triage notifications", async () => {
+      mockEnqueueSystemEvent.mockClear();
+      setupWebhookTarget({
+        account: createMockAccount({
+          inboundTriage: {
+            enabled: true,
+            vipSenderIds: ["+15551234567"],
+            vipDelayMinutes: 0.001,
+          },
+        }),
+      });
+
+      const payload = createTimestampedNewMessagePayloadForTest({
+        text: "hey, are you free for dinner",
+        senderName: "Jo",
+      });
+
+      await dispatchWebhookPayload(payload);
+
+      expect(mockDispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
+      expect(mockEnqueueSystemEvent).not.toHaveBeenCalled();
+
+      await vi.waitFor(
+        () => {
+          expect(mockEnqueueSystemEvent).toHaveBeenCalledWith(
+            expect.stringContaining("[bluebubbles triage] delayed after 0.001m hold"),
+            expect.any(Object),
+          );
+        },
+        { timeout: 250, interval: 10 },
+      );
+    });
+
+    it("matches VIP sender IDs after handle normalization", async () => {
+      mockEnqueueSystemEvent.mockClear();
+      setupWebhookTarget({
+        account: createMockAccount({
+          inboundTriage: {
+            enabled: true,
+            vipSenderIds: ["+15551234567"],
+            vipDelayMinutes: 0.001,
+            unknownSenderDelayMinutes: 5,
+          },
+        }),
+      });
+
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-vip-normalized-1",
+          senderId: "imessage:+15551234567",
+          senderName: "Jo",
+          text: "normalized vip match",
+        }),
+      );
+
+      await vi.waitFor(
+        () => {
+          expect(mockEnqueueSystemEvent).toHaveBeenCalledWith(
+            expect.stringContaining("[bluebubbles triage] delayed after 0.001m hold"),
+            expect.any(Object),
+          );
+        },
+        { timeout: 250, interval: 10 },
+      );
+    });
+
+    it("loses delayed triage notifications when in-memory triage state is reset before they fire", async () => {
+      mockEnqueueSystemEvent.mockClear();
+      setupWebhookTarget({
+        account: createMockAccount({
+          inboundTriage: {
+            enabled: true,
+            vipSenderIds: ["+15551234567"],
+            vipDelayMinutes: 0.002,
+          },
+        }),
+      });
+
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-vip-restart-loss-1",
+          senderId: "+15551234567",
+          senderName: "Fiona",
+          text: "this should be lost on reset",
+        }),
+      );
+
+      resetBlueBubblesTriageStateForTest();
+      await new Promise((resolve) => setTimeout(resolve, 180));
+
+      expect(mockEnqueueSystemEvent).not.toHaveBeenCalled();
+    });
+
+    it("cancels a delayed triage notification when a from-me webhook arrives first", async () => {
+      mockEnqueueSystemEvent.mockClear();
+      setupWebhookTarget({
+        account: createMockAccount({
+          inboundTriage: {
+            enabled: true,
+            vipSenderIds: ["+15551234567"],
+            vipDelayMinutes: 0.001,
+          },
+        }),
+      });
+
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-vip-1",
+          text: "hey, are you free for dinner",
+          senderName: "Jo",
+        }),
+      );
+
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-vip-2",
+          text: "Yep, on my way",
+          isFromMe: true,
+          senderName: "Joel",
+        }),
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(mockEnqueueSystemEvent).not.toHaveBeenCalled();
+    });
+
+    it("schedules delayed triage for unknown senders", async () => {
+      mockEnqueueSystemEvent.mockClear();
+      setupWebhookTarget({
+        account: createMockAccount({
+          inboundTriage: {
+            enabled: true,
+            unknownSenderDelayMinutes: 0.001,
+          },
+          allowFrom: ["+15557654321"],
+        }),
+      });
+
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-unknown-1",
+          senderId: "+15557654321",
+          senderName: "Alex",
+          text: "checking in about tonight",
+        }),
+      );
+
+      expect(mockDispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
+      expect(mockEnqueueSystemEvent).not.toHaveBeenCalled();
+
+      await vi.waitFor(
+        () => {
+          expect(mockEnqueueSystemEvent).toHaveBeenCalledWith(
+            expect.stringContaining("[bluebubbles triage] delayed after 0.001m hold"),
+            expect.objectContaining({
+              contextKey: expect.stringContaining("bluebubbles:triage:default:"),
+            }),
+          );
+        },
+        { timeout: 250, interval: 10 },
+      );
+    });
+
+    it("routes delayed triage notifications to explicit deliveryContext when configured", async () => {
+      mockEnqueueSystemEvent.mockClear();
+      setupWebhookTarget({
+        account: createMockAccount({
+          inboundTriage: {
+            enabled: true,
+            unknownSenderDelayMinutes: 0.001,
+            notify: {
+              channel: "slack",
+              to: "user:U02PG6MLXB8",
+              accountId: "default",
+            },
+          },
+          allowFrom: ["+15557654321"],
+        }),
+      });
+
+      await dispatchWebhookPayload(
+        createTimestampedNewMessagePayloadForTest({
+          guid: "msg-unknown-slack-1",
+          senderId: "+15557654321",
+          senderName: "Alex",
+          text: "checking in about tonight",
+        }),
+      );
+
+      expect(mockDispatchReplyWithBufferedBlockDispatcher).not.toHaveBeenCalled();
+      expect(mockEnqueueSystemEvent).not.toHaveBeenCalled();
+
+      await vi.waitFor(
+        () => {
+          expect(mockEnqueueSystemEvent).toHaveBeenCalledWith(
+            expect.stringContaining("[bluebubbles triage] delayed after 0.001m hold"),
+            expect.objectContaining({
+              sessionKey: DEFAULT_RESOLVED_AGENT_ROUTE.mainSessionKey,
+              deliveryContext: {
+                channel: "slack",
+                to: "user:U02PG6MLXB8",
+                accountId: "default",
+              },
+            }),
+          );
+        },
+        { timeout: 250, interval: 10 },
+      );
     });
   });
 
