@@ -321,6 +321,15 @@ export const GENERATED_BUNDLED_CHANNEL_CONFIG_METADATA = [
         coalesceSameSenderDms: {
           type: "boolean",
         },
+        webhookLogging: {
+          type: "object",
+          properties: {
+            enabled: {
+              type: "boolean",
+            },
+          },
+          additionalProperties: false,
+        },
         accounts: {
           type: "object",
           properties: {},
@@ -637,6 +646,15 @@ export const GENERATED_BUNDLED_CHANNEL_CONFIG_METADATA = [
               },
               coalesceSameSenderDms: {
                 type: "boolean",
+              },
+              webhookLogging: {
+                type: "object",
+                properties: {
+                  enabled: {
+                    type: "boolean",
+                  },
+                },
+                additionalProperties: false,
               },
             },
             required: ["enrichGroupParticipantsFromContacts"],
