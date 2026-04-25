@@ -406,6 +406,15 @@ export const GENERATED_BUNDLED_CHANNEL_CONFIG_METADATA = [
           },
           additionalProperties: false,
         },
+        webhookLogging: {
+          type: "object",
+          properties: {
+            enabled: {
+              type: "boolean",
+            },
+          },
+          additionalProperties: false,
+        },
         accounts: {
           type: "object",
           properties: {},
@@ -804,6 +813,15 @@ export const GENERATED_BUNDLED_CHANNEL_CONFIG_METADATA = [
                     type: "integer",
                     minimum: 0,
                     maximum: 23,
+                  },
+                },
+                additionalProperties: false,
+              },
+              webhookLogging: {
+                type: "object",
+                properties: {
+                  enabled: {
+                    type: "boolean",
                   },
                 },
                 additionalProperties: false,
