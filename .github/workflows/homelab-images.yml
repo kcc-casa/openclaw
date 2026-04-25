@@ -259,17 +259,13 @@ jobs:
             "https://api.github.com/repos/${HOMELAB_REPO}/pulls?state=open&head=kcc-casa:${HOMELAB_BRANCH}" \
             | jq -r '.[0].number // empty')"
           title="chore(openclaw): bump base image to ${{ needs.prepare-promote-inputs.outputs.image_tag }}"
-          body="$(cat <<EOF
-Automated promotion from:
-- repo: kcc-casa/openclaw
-- branch: ${GITHUB_REF_NAME}
-- source commit: ${GITHUB_SHA}
-- published base image: ${OPENCLAW_BASE_IMAGE}
+          body="Automated promotion from:
+          - repo: kcc-casa/openclaw
+          - branch: ${GITHUB_REF_NAME}
+          - source commit: ${GITHUB_SHA}
+          - published base image: ${OPENCLAW_BASE_IMAGE}
 
-This PR updates \
-\`${HOMELAB_BASE_IMAGE_FILE}\` so the homelab custom-image pipeline can rebuild the real runtime image and continue its normal GitOps write-back path.
-EOF
-)"
+          This PR updates ${HOMELAB_BASE_IMAGE_FILE} so the homelab custom-image pipeline can rebuild the real runtime image and continue its normal GitOps write-back path."
           if [ -n "${existing_pr}" ]; then
             jq -n --arg title "${title}" --arg body "${body}" '{title:$title, body:$body}' \
               | curl --fail --silent --show-error \
