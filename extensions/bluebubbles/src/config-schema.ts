@@ -46,6 +46,13 @@ const bluebubblesNetworkSchema = z
   .strict()
   .optional();
 
+const bluebubblesWebhookLoggingSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+  })
+  .strict()
+  .optional();
+
 const bluebubblesCatchupSchema = z
   .object({
     /** Replay messages delivered while the gateway was unreachable. Defaults to on. */
@@ -127,6 +134,7 @@ const bluebubblesAccountSchema = z
     blockStreaming: z.boolean().optional(),
     groups: z.object({}).catchall(bluebubblesGroupConfigSchema).optional(),
     inboundTriage: bluebubblesInboundTriageSchema,
+    webhookLogging: bluebubblesWebhookLoggingSchema,
   })
   .superRefine((value, ctx) => {
     const serverUrl = value.serverUrl?.trim() ?? "";

@@ -36,6 +36,11 @@ export type BlueBubblesNetworkConfig = {
   dangerouslyAllowPrivateNetwork?: boolean;
 };
 
+export type BlueBubblesWebhookLoggingConfig = {
+  /** If true, log every incoming BlueBubbles webhook body in full after auth/body parsing. */
+  enabled?: boolean;
+};
+
 export type BlueBubblesInboundTriageNotifyTarget = {
   /** Explicit notification channel override, for example "slack". */
   channel?: string;
@@ -144,6 +149,8 @@ export type BlueBubblesAccountConfig = {
   groups?: Record<string, BlueBubblesGroupConfig>;
   /** Optional inbound triage mode that surfaces system events instead of auto-replying. */
   inboundTriage?: BlueBubblesInboundTriageConfig;
+  /** Optional full incoming webhook logging for debugging. */
+  webhookLogging?: BlueBubblesWebhookLoggingConfig;
   /** Per-action tool gating (default: true for all). */
   actions?: BlueBubblesActionConfig;
   /** Channel health monitor overrides for this channel/account. */
