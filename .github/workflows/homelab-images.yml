@@ -293,7 +293,7 @@ EOF
             echo "pr_number=${pr_number}" >> "${GITHUB_OUTPUT}"
           fi
 
-      - name: Enable PR auto-merge
+      - name: Merge homelab PR when ready
         if: ${{ steps.diff-check.outputs.changed == 'true' }}
         shell: bash
         env:
@@ -301,33 +301,33 @@ EOF
         run: |
           set -euo pipefail
           auth_header="Authorization: Bearer ${APP_TOKEN}"
-          repo_json="$(curl --fail --silent --show-error \
-            -H "${auth_header}" \
-            -H 'Accept: application/vnd.github+json' \
-            "https://api.github.com/repos/${HOMELAB_REPO}")"
-          allow_auto_merge="$(printf '%s' "${repo_json}" | jq -r '.allow_auto_merge')"
-          if [ "${allow_auto_merge}" != "true" ]; then
-            echo "GitHub auto-merge is disabled for ${HOMELAB_REPO}. Enable repository auto-merge in settings, then rerun this workflow." >&2
-            exit 1
-          fi
+          accept_header='Accept: application/vnd.github+json'
+          pr_number='${{ steps.create-pr.outputs.pr_number }}'
           pr_json="$(curl --fail --silent --show-error \
             -H "${auth_header}" \
-            -H 'Accept: application/vnd.github+json' \
-            "https://api.github.com/repos/${HOMELAB_REPO}/pulls/${{ steps.create-pr.outputs.pr_number }}")"
-          pr_id="$(printf '%s' "${pr_json}" | jq -r '.node_id')"
-          response="$(jq -n --arg pr_id "${pr_id}" '{query:"mutation($prId:ID!){ enablePullRequestAutoMerge(input:{pullRequestId:$prId, mergeMethod:SQUASH}) { clientMutationId } }", variables:{prId:$pr_id}}' \
-            | curl --fail --silent --show-error \
-                -X POST \
-                -H "${auth_header}" \
-                -H 'Content-Type: application/json' \
-                -H 'Accept: application/vnd.github+json' \
-                --data @- \
-                https://api.github.com/graphql)"
-          if [ "$(printf '%s' "${response}" | jq '(.errors // []) | length')" -gt 0 ]; then
-            printf '%s\n' "${response}" | jq . >&2
+            -H "${accept_header}" \
+            "https://api.github.com/repos/${HOMELAB_REPO}/pulls/${pr_number}")"
+          mergeable_state="$(printf '%s' "${pr_json}" | jq -r '.mergeable_state // "unknown"')"
+          draft="$(printf '%s' "${pr_json}" | jq -r '.draft')"
+          if [ "${draft}" = "true" ]; then
+            echo "Homelab PR #${pr_number} is draft; refusing to merge automatically." >&2
             exit 1
           fi
-          if [ "$(printf '%s' "${response}" | jq '(.data.enablePullRequestAutoMerge // null) == null')" = "true" ]; then
-            printf '%s\n' "${response}" | jq . >&2
+          if [ "${mergeable_state}" != "clean" ] && [ "${mergeable_state}" != "unstable" ] && [ "${mergeable_state}" != "has_hooks" ]; then
+            echo "Homelab PR #${pr_number} is not merge-ready (mergeable_state=${mergeable_state})." >&2
+            printf '%s\n' "${pr_json}" | jq '{number, state, draft, mergeable, mergeable_state}' >&2
+            exit 1
+          fi
+          merge_response="$(jq -n --arg commit_title "chore(openclaw): promote ${{ needs.prepare-promote-inputs.outputs.image_tag }}" '{merge_method:"squash", commit_title:$commit_title}' \
+            | curl --fail --silent --show-error \
+                -X PUT \
+                -H "${auth_header}" \
+                -H "${accept_header}" \
+                -H 'Content-Type: application/json' \
+                --data @- \
+                "https://api.github.com/repos/${HOMELAB_REPO}/pulls/${pr_number}/merge")"
+          merged="$(printf '%s' "${merge_response}" | jq -r '.merged // false')"
+          if [ "${merged}" != "true" ]; then
+            printf '%s\n' "${merge_response}" | jq . >&2
             exit 1
           fi
