@@ -614,7 +614,29 @@ type HeartbeatPromptResolution = {
   prompt: string | null;
   hasExecCompletion: boolean;
   hasCronEvents: boolean;
+  dueTaskCount: number;
 };
+
+function resolveHeartbeatPromptSource(params: {
+  preflight: HeartbeatPreflight;
+  prompt: string | null;
+  hasExecCompletion: boolean;
+  hasCronEvents: boolean;
+}) {
+  if (params.prompt === null) {
+    return "none" as const;
+  }
+  if (params.preflight.tasks && params.preflight.tasks.length > 0) {
+    return "tasks" as const;
+  }
+  if (params.hasExecCompletion) {
+    return "exec-event" as const;
+  }
+  if (params.hasCronEvents) {
+    return "cron-event" as const;
+  }
+  return "default" as const;
+}
 
 function appendHeartbeatWorkspacePathHint(prompt: string, workspaceDir: string): string {
   if (!/heartbeat\.md/i.test(prompt)) {
@@ -679,10 +701,15 @@ After completing all due tasks, reply HEARTBEAT_OK.`;
           prompt += `\n\nAdditional context from HEARTBEAT.md:\n${directives}`;
         }
       }
-      return { prompt, hasExecCompletion: false, hasCronEvents: false };
+      return {
+        prompt,
+        hasExecCompletion: false,
+        hasCronEvents: false,
+        dueTaskCount: dueTasks.length,
+      };
     }
     // No tasks due - skip this heartbeat to avoid wasteful API calls
-    return { prompt: null, hasExecCompletion: false, hasCronEvents: false };
+    return { prompt: null, hasExecCompletion: false, hasCronEvents: false, dueTaskCount: 0 };
   }
 
   // Fallback to original behavior
@@ -693,7 +720,7 @@ After completing all due tasks, reply HEARTBEAT_OK.`;
       : resolveHeartbeatPrompt(params.cfg, params.heartbeat);
   const prompt = appendHeartbeatWorkspacePathHint(basePrompt, params.workspaceDir);
 
-  return { prompt, hasExecCompletion, hasCronEvents };
+  return { prompt, hasExecCompletion, hasCronEvents, dueTaskCount: 0 };
 }
 
 export async function runHeartbeatOnce(opts: {
@@ -723,12 +750,21 @@ export async function runHeartbeatOnce(opts: {
   }
 
   const startedAt = opts.deps?.nowMs?.() ?? Date.now();
+  const reasonKind = resolveHeartbeatReasonKind(opts.reason);
   if (!isWithinActiveHours(cfg, heartbeat, startedAt)) {
     return { status: "skipped", reason: "quiet-hours" };
   }
 
   const queueSize = (opts.deps?.getQueueSize ?? getQueueSize)(CommandLane.Main);
   if (queueSize > 0) {
+    log.info("heartbeat: main lane busy", {
+      event: "heartbeat.run.skipped_busy_main_lane",
+      agentId,
+      reason: opts.reason ?? null,
+      reasonKind,
+      forcedSessionKey: opts.sessionKey ?? null,
+      mainLaneSize: queueSize,
+    });
     return { status: "skipped", reason: "requests-in-flight" };
   }
 
@@ -741,6 +777,17 @@ export async function runHeartbeatOnce(opts: {
     reason: opts.reason,
   });
   if (preflight.skipReason) {
+    log.info("heartbeat: preflight skipped", {
+      event: "heartbeat.run.preflight_skipped",
+      agentId,
+      reason: opts.reason ?? null,
+      reasonKind,
+      forcedSessionKey: opts.sessionKey ?? null,
+      resolvedSessionKey: preflight.session.sessionKey,
+      skipReason: preflight.skipReason,
+      pendingEventCount: preflight.pendingEventEntries.length,
+      shouldInspectPendingEvents: preflight.shouldInspectPendingEvents,
+    });
     emitHeartbeatEvent({
       status: "skipped",
       reason: preflight.skipReason,
@@ -756,6 +803,18 @@ export async function runHeartbeatOnce(opts: {
   const sessionLaneKey = resolveEmbeddedSessionLane(sessionKey);
   const sessionLaneSize = (opts.deps?.getQueueSize ?? getQueueSize)(sessionLaneKey);
   if (sessionLaneSize > 0) {
+    log.info("heartbeat: session lane busy", {
+      event: "heartbeat.run.skipped_busy_session_lane",
+      agentId,
+      reason: opts.reason ?? null,
+      reasonKind,
+      forcedSessionKey: opts.sessionKey ?? null,
+      resolvedSessionKey: sessionKey,
+      sessionLaneKey,
+      sessionLaneSize,
+      pendingEventCount: preflight.pendingEventEntries.length,
+      shouldInspectPendingEvents: preflight.shouldInspectPendingEvents,
+    });
     emitHeartbeatEvent({
       status: "skipped",
       reason: "requests-in-flight",
@@ -813,7 +872,7 @@ export async function runHeartbeatOnce(opts: {
     delivery.channel !== "none" && delivery.to && visibility.showAlerts,
   );
   const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
-  const { prompt, hasExecCompletion, hasCronEvents } = resolveHeartbeatRunPrompt({
+  const { prompt, hasExecCompletion, hasCronEvents, dueTaskCount } = resolveHeartbeatRunPrompt({
     cfg,
     heartbeat,
     preflight,
@@ -822,9 +881,43 @@ export async function runHeartbeatOnce(opts: {
     startedAt,
     heartbeatFileContent: preflight.heartbeatFileContent,
   });
+  const promptSource = resolveHeartbeatPromptSource({
+    preflight,
+    prompt,
+    hasExecCompletion,
+    hasCronEvents,
+  });
+  log.info("heartbeat: prompt resolved", {
+    event: "heartbeat.run.prompt_resolved",
+    agentId,
+    reason: opts.reason ?? null,
+    reasonKind,
+    forcedSessionKey: opts.sessionKey ?? null,
+    resolvedSessionKey: sessionKey,
+    promptSource,
+    promptCreated: prompt !== null,
+    pendingEventCount: preflight.pendingEventEntries.length,
+    shouldInspectPendingEvents: preflight.shouldInspectPendingEvents,
+    hasExecCompletion,
+    hasCronEvents,
+    taskCount: preflight.tasks?.length ?? 0,
+    dueTaskCount,
+    heartbeatFilePresent: typeof preflight.heartbeatFileContent === "string",
+  });
 
   // If no tasks are due, skip heartbeat entirely
   if (prompt === null) {
+    log.info("heartbeat: skipped after prompt resolution", {
+      event: "heartbeat.run.skipped_after_prompt_resolution",
+      agentId,
+      reason: opts.reason ?? null,
+      reasonKind,
+      forcedSessionKey: opts.sessionKey ?? null,
+      resolvedSessionKey: sessionKey,
+      skipReason: "no-tasks-due",
+      promptSource,
+      pendingEventCount: preflight.pendingEventEntries.length,
+    });
     // Wake-triggered events should stay queued when the run short-circuits:
     // no reply turn ran, so there is nothing that actually consumed that wake payload.
     const shouldConsumeInspectedEvents =
