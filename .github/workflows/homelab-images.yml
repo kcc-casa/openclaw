@@ -259,14 +259,17 @@ jobs:
             "https://api.github.com/repos/${HOMELAB_REPO}/pulls?state=open&head=kcc-casa:${HOMELAB_BRANCH}" \
             | jq -r '.[0].number // empty')"
           title="chore(openclaw): bump base image to ${{ needs.prepare-promote-inputs.outputs.image_tag }}"
-          body=$(printf '%s\n' \
-            'Automated promotion from:' \
-            '- repo: kcc-casa/openclaw' \
-            "- branch: ${GITHUB_REF_NAME}" \
-            "- source commit: ${GITHUB_SHA}" \
-            "- published base image: ${OPENCLAW_BASE_IMAGE}" \
-            '' \
-            "This PR updates \\`${HOMELAB_BASE_IMAGE_FILE}\\` so the homelab custom-image pipeline can rebuild the real runtime image and continue its normal GitOps write-back path.")
+          body="$(cat <<EOF
+Automated promotion from:
+- repo: kcc-casa/openclaw
+- branch: ${GITHUB_REF_NAME}
+- source commit: ${GITHUB_SHA}
+- published base image: ${OPENCLAW_BASE_IMAGE}
+
+This PR updates \
+\`${HOMELAB_BASE_IMAGE_FILE}\` so the homelab custom-image pipeline can rebuild the real runtime image and continue its normal GitOps write-back path.
+EOF
+)"
           if [ -n "${existing_pr}" ]; then
             jq -n --arg title "${title}" --arg body "${body}" '{title:$title, body:$body}' \
               | curl --fail --silent --show-error \
@@ -298,16 +301,33 @@ jobs:
         run: |
           set -euo pipefail
           auth_header="Authorization: Bearer ${APP_TOKEN}"
-          pr_id="$(curl --fail --silent --show-error \
+          repo_json="$(curl --fail --silent --show-error \
             -H "${auth_header}" \
             -H 'Accept: application/vnd.github+json' \
-            "https://api.github.com/repos/kcc-casa/homelab/pulls/${{ steps.create-pr.outputs.pr_number }}" \
-            | jq -r '.node_id')"
-          jq -n --arg pr_id "${pr_id}" '{query:"mutation($prId:ID!){ enablePullRequestAutoMerge(input:{pullRequestId:$prId, mergeMethod:SQUASH}) { clientMutationId } }", variables:{prId:$pr_id}}' \
+            "https://api.github.com/repos/${HOMELAB_REPO}")"
+          allow_auto_merge="$(printf '%s' "${repo_json}" | jq -r '.allow_auto_merge')"
+          if [ "${allow_auto_merge}" != "true" ]; then
+            echo "GitHub auto-merge is disabled for ${HOMELAB_REPO}. Enable repository auto-merge in settings, then rerun this workflow." >&2
+            exit 1
+          fi
+          pr_json="$(curl --fail --silent --show-error \
+            -H "${auth_header}" \
+            -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/${HOMELAB_REPO}/pulls/${{ steps.create-pr.outputs.pr_number }}")"
+          pr_id="$(printf '%s' "${pr_json}" | jq -r '.node_id')"
+          response="$(jq -n --arg pr_id "${pr_id}" '{query:"mutation($prId:ID!){ enablePullRequestAutoMerge(input:{pullRequestId:$prId, mergeMethod:SQUASH}) { clientMutationId } }", variables:{prId:$pr_id}}' \
             | curl --fail --silent --show-error \
                 -X POST \
                 -H "${auth_header}" \
                 -H 'Content-Type: application/json' \
                 -H 'Accept: application/vnd.github+json' \
                 --data @- \
-                https://api.github.com/graphql >/dev/null
+                https://api.github.com/graphql)"
+          if [ "$(printf '%s' "${response}" | jq '(.errors // []) | length')" -gt 0 ]; then
+            printf '%s\n' "${response}" | jq . >&2
+            exit 1
+          fi
+          if [ "$(printf '%s' "${response}" | jq '(.data.enablePullRequestAutoMerge // null) == null')" = "true" ]; then
+            printf '%s\n' "${response}" | jq . >&2
+            exit 1
+          fi
