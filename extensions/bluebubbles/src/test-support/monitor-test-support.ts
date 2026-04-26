@@ -25,6 +25,7 @@ export const EMPTY_DISPATCH_RESULT = {
 
 type BlueBubblesMonitorTestRuntimeMocks = {
   enqueueSystemEvent: PluginRuntime["system"]["enqueueSystemEvent"];
+  requestHeartbeatNow?: PluginRuntime["system"]["requestHeartbeatNow"];
   chunkMarkdownText: PluginRuntime["channel"]["text"]["chunkMarkdownText"];
   chunkByNewline: PluginRuntime["channel"]["text"]["chunkByNewline"];
   chunkMarkdownTextWithMode: PluginRuntime["channel"]["text"]["chunkMarkdownTextWithMode"];
@@ -58,6 +59,7 @@ export function createBlueBubblesMonitorTestRuntime(
   return createPluginRuntimeMock({
     system: {
       enqueueSystemEvent: mocks.enqueueSystemEvent,
+      requestHeartbeatNow: mocks.requestHeartbeatNow,
     },
     channel: {
       text: {

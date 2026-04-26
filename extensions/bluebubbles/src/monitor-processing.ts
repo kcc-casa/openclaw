@@ -625,6 +625,13 @@ function scheduleDelayedTriageNotification(params: {
       deliveryContext?: BlueBubblesInboundTriageNotifyTarget;
     },
   ) => void;
+  requestHeartbeatNow?: (opts?: {
+    reason?: string;
+    coalesceMs?: number;
+    agentId?: string;
+    sessionKey?: string;
+    heartbeat?: { target?: string };
+  }) => void;
   instrumentation?: {
     core: BlueBubblesCoreRuntime;
     runtime: BlueBubblesRuntimeEnv;
@@ -655,11 +662,13 @@ function scheduleDelayedTriageNotification(params: {
           `enqueue-delayed sender=${params.senderId} session=${params.notifyTarget?.sessionKey ?? params.sessionKey} context=${params.contextKey} preview=${JSON.stringify(params.text.slice(0, 120))}`,
         );
       }
+      const targetSessionKey = params.notifyTarget?.sessionKey ?? params.sessionKey;
       params.enqueue(params.text, {
-        sessionKey: params.notifyTarget?.sessionKey ?? params.sessionKey,
+        sessionKey: targetSessionKey,
         contextKey: params.contextKey,
         deliveryContext: params.notifyTarget?.deliveryContext,
       });
+      params.requestHeartbeatNow?.({ reason: "notifications-event", sessionKey: targetSessionKey });
       if (params.instrumentation) {
         logTriageInstrumentation(
           params.instrumentation.core,
@@ -2101,10 +2110,15 @@ async function processMessageAfterDedupe(
         runtime,
         `enqueue-immediate sender=${message.senderId} session=${route.sessionKey} context=${contextKey} preview=${JSON.stringify(triageDecision.text.slice(0, 120))}`,
       );
+      const targetSessionKey = triageDecision.notifyTarget?.sessionKey ?? route.sessionKey;
       core.system.enqueueSystemEvent(triageDecision.text, {
-        sessionKey: triageDecision.notifyTarget?.sessionKey ?? route.sessionKey,
+        sessionKey: targetSessionKey,
         contextKey,
         deliveryContext: triageDecision.notifyTarget?.deliveryContext,
+      });
+      core.system.requestHeartbeatNow({
+        reason: "notifications-event",
+        sessionKey: targetSessionKey,
       });
       logTriageInstrumentation(
         core,
@@ -2129,6 +2143,7 @@ async function processMessageAfterDedupe(
         text: triageDecision.text,
         notifyTarget: triageDecision.notifyTarget,
         enqueue: (text, opts) => core.system.enqueueSystemEvent(text, opts),
+        requestHeartbeatNow: core.system.requestHeartbeatNow,
         instrumentation: {
           core,
           runtime,

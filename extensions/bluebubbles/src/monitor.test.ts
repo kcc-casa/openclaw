@@ -64,6 +64,7 @@ vi.mock("./history.js", () => ({
 
 // Mock runtime
 const mockEnqueueSystemEvent = vi.fn();
+const mockRequestHeartbeatNow = vi.fn();
 const mockBuildPairingReply = vi.fn(() => "Pairing code: TESTCODE");
 const mockReadAllowFromStore = vi.fn().mockResolvedValue([]);
 const mockUpsertPairingRequest = vi.fn().mockResolvedValue({ code: "TESTCODE", created: true });
@@ -123,6 +124,7 @@ const mockFetch = vi.fn();
 function createMockRuntime(): PluginRuntime {
   return createBlueBubblesMonitorTestRuntime({
     enqueueSystemEvent: mockEnqueueSystemEvent,
+    requestHeartbeatNow: mockRequestHeartbeatNow,
     chunkMarkdownText: mockChunkMarkdownText,
     chunkByNewline: mockChunkByNewline,
     chunkMarkdownTextWithMode: mockChunkMarkdownTextWithMode,
@@ -636,6 +638,12 @@ describe("BlueBubbles webhook monitor", () => {
           },
         }),
       );
+      expect(mockRequestHeartbeatNow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reason: "notifications-event",
+          sessionKey: DEFAULT_RESOLVED_AGENT_ROUTE.mainSessionKey,
+        }),
+      );
     });
 
     it("suppresses OTP messages when triage mode is enabled", async () => {
@@ -863,6 +871,12 @@ describe("BlueBubbles webhook monitor", () => {
                 to: "user:U02PG6MLXB8",
                 accountId: "default",
               },
+            }),
+          );
+          expect(mockRequestHeartbeatNow).toHaveBeenCalledWith(
+            expect.objectContaining({
+              reason: "notifications-event",
+              sessionKey: DEFAULT_RESOLVED_AGENT_ROUTE.mainSessionKey,
             }),
           );
         },
