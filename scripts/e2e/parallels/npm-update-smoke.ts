@@ -443,6 +443,16 @@ class NpmUpdateSmoke {
   ): Promise<void> {
     const scriptPath = this.writePosixGuestScript(macosVm, "macos", script);
     const macosExecArgs = this.resolveMacosUpdateExecArgs(ctx);
+    const sudoUserArgIndex = macosExecArgs.indexOf("-u");
+    const sudoUser =
+      sudoUserArgIndex >= 0 && sudoUserArgIndex + 1 < macosExecArgs.length
+        ? macosExecArgs[sudoUserArgIndex + 1]
+        : "";
+    if (sudoUser) {
+      run("prlctl", ["exec", macosVm, "/usr/sbin/chown", sudoUser, scriptPath], {
+        timeoutMs: 30_000,
+      });
+    }
     const status = await this.runStreamingToJobLog(
       "prlctl",
       ["exec", macosVm, ...macosExecArgs, "/bin/bash", scriptPath],
