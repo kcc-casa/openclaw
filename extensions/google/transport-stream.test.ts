@@ -380,7 +380,7 @@ describe("google transport stream", () => {
       }),
       "utf8",
     );
-    vi.stubEnv("GOOGLE_APPLICATION_CREDENTIALS", undefined);
+    vi.stubEnv("GOOGLE_APPLICATION_CREDENTIALS", "");
     vi.stubEnv("HOME", homeDir);
     vi.stubEnv("APPDATA", appDataDir);
     vi.stubEnv("GOOGLE_CLOUD_PROJECT", "vertex-project");
