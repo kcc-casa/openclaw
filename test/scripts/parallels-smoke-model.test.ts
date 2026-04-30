@@ -375,6 +375,7 @@ console.log(resolveUbuntuVmName("Ubuntu missing"));
     expect(script).toContain("__OPENCLAW_LOG_OFFSET__");
     expect(script).toContain("result.status !== 0 && result.status !== 124");
     expect(script).toContain("Start-Process -FilePath powershell.exe");
+    expect(script).toContain('launchLog.includes("started")');
     expect(script).toContain("waitForBackgroundMaterialized(pathsScript, 45_000)");
   });
 

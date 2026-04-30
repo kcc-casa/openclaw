@@ -688,6 +688,10 @@ Start-Process -FilePath powershell.exe -WindowStyle Hidden -ArgumentList @('-NoP
       );
       const launchLog = await readFile(launchLogPath, "utf8").catch(() => "");
       this.log(launchLog);
+      if (launchStatus === 0 && launchLog.includes("started")) {
+        launched = true;
+        break;
+      }
       if (launchStatus === 0 || launchStatus === 124) {
         const materialized = this.waitForBackgroundMaterialized(pathsScript, 45_000);
         if (!materialized) {
