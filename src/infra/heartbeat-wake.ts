@@ -104,6 +104,22 @@ function getWakeTargetKey(params: { agentId?: string; sessionKey?: string }) {
   return `${agentId ?? ""}::${sessionKey ?? ""}`;
 }
 
+// Dispatch targeted/action wakes before generic interval wakes. This lets the
+// runner advance a session's nextDueMs before the broad interval sweep runs,
+// which avoids back-to-back heartbeat turns for the same session when both were
+// queued in the same coalescing window.
+function comparePendingWakeOrder(left: PendingWakeReason, right: PendingWakeReason) {
+  const leftTargetSpecificity = (left.sessionKey ? 2 : 0) + (left.agentId ? 1 : 0);
+  const rightTargetSpecificity = (right.sessionKey ? 2 : 0) + (right.agentId ? 1 : 0);
+  if (leftTargetSpecificity !== rightTargetSpecificity) {
+    return rightTargetSpecificity - leftTargetSpecificity;
+  }
+  if (left.priority !== right.priority) {
+    return right.priority - left.priority;
+  }
+  return left.requestedAt - right.requestedAt;
+}
+
 function queuePendingWakeReason(params?: {
   reason?: string;
   requestedAt?: number;
@@ -181,7 +197,7 @@ function schedule(coalesceMs: number, kind: WakeTimerKind = "normal") {
       return;
     }
 
-    const pendingBatch = Array.from(pendingWakes.values());
+    const pendingBatch = Array.from(pendingWakes.values()).toSorted(comparePendingWakeOrder);
     pendingWakes.clear();
     running = true;
     try {
