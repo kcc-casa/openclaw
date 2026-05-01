@@ -716,7 +716,7 @@ describe("BlueBubbles webhook monitor", () => {
       await dispatchWebhookPayload(
         createTimestampedNewMessagePayloadForTest({
           guid: "msg-vip-normalized-1",
-          senderId: "imessage:+15551234567",
+          handle: { address: "imessage:+15551234567" },
           senderName: "Jo",
           text: "normalized vip match",
         }),
@@ -748,7 +748,7 @@ describe("BlueBubbles webhook monitor", () => {
       await dispatchWebhookPayload(
         createTimestampedNewMessagePayloadForTest({
           guid: "msg-vip-restart-loss-1",
-          senderId: "+15551234567",
+          handle: { address: "+15551234567" },
           senderName: "Fiona",
           text: "this should be lost on reset",
         }),
@@ -809,7 +809,7 @@ describe("BlueBubbles webhook monitor", () => {
       await dispatchWebhookPayload(
         createTimestampedNewMessagePayloadForTest({
           guid: "msg-unknown-1",
-          senderId: "+15557654321",
+          handle: { address: "+15557654321" },
           senderName: "Alex",
           text: "checking in about tonight",
         }),
@@ -851,7 +851,7 @@ describe("BlueBubbles webhook monitor", () => {
       await dispatchWebhookPayload(
         createTimestampedNewMessagePayloadForTest({
           guid: "msg-unknown-slack-1",
-          senderId: "+15557654321",
+          handle: { address: "+15557654321" },
           senderName: "Alex",
           text: "checking in about tonight",
         }),
@@ -905,7 +905,7 @@ describe("BlueBubbles webhook monitor", () => {
       await dispatchWebhookPayload(
         createTimestampedNewMessagePayloadForTest({
           guid: "msg-repeat-unknown-1",
-          senderId: "+15557654321",
+          handle: { address: "+15557654321" },
           senderName: "Alex",
           text: "first ping",
         }),
@@ -913,7 +913,7 @@ describe("BlueBubbles webhook monitor", () => {
       await dispatchWebhookPayload(
         createTimestampedNewMessagePayloadForTest({
           guid: "msg-repeat-unknown-2",
-          senderId: "+15557654321",
+          handle: { address: "+15557654321" },
           senderName: "Alex",
           text: "second ping",
         }),
@@ -924,7 +924,7 @@ describe("BlueBubbles webhook monitor", () => {
       await dispatchWebhookPayload(
         createTimestampedNewMessagePayloadForTest({
           guid: "msg-repeat-unknown-3",
-          senderId: "+15557654321",
+          handle: { address: "+15557654321" },
           senderName: "Alex",
           text: "third ping",
         }),
@@ -963,7 +963,7 @@ describe("BlueBubbles webhook monitor", () => {
       await dispatchWebhookPayload(
         createTimestampedNewMessagePayloadForTest({
           guid: "msg-repeat-vip-1",
-          senderId: "+15551234567",
+          handle: { address: "+15551234567" },
           senderName: "Fiona",
           text: "one",
         }),
@@ -971,7 +971,7 @@ describe("BlueBubbles webhook monitor", () => {
       await dispatchWebhookPayload(
         createTimestampedNewMessagePayloadForTest({
           guid: "msg-repeat-vip-2",
-          senderId: "+15551234567",
+          handle: { address: "+15551234567" },
           senderName: "Fiona",
           text: "two",
         }),
@@ -982,7 +982,7 @@ describe("BlueBubbles webhook monitor", () => {
       await dispatchWebhookPayload(
         createTimestampedNewMessagePayloadForTest({
           guid: "msg-repeat-vip-3",
-          senderId: "+15551234567",
+          handle: { address: "+15551234567" },
           senderName: "Fiona",
           text: "three",
         }),

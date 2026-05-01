@@ -462,6 +462,7 @@ export function buildBlueBubblesInboundChatResolveTarget(params: {
     return null;
   }
   return { kind: "handle", address: trimmedSender };
+}
 
 export function resetBlueBubblesTriageStateForTest(): void {
   for (const entry of pendingDelayedTriageNotifications.values()) {
