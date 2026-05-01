@@ -318,8 +318,93 @@ export const GENERATED_BUNDLED_CHANNEL_CONFIG_METADATA = [
             additionalProperties: false,
           },
         },
-        coalesceSameSenderDms: {
-          type: "boolean",
+        inboundTriage: {
+          type: "object",
+          properties: {
+            enabled: {
+              type: "boolean",
+            },
+            immediateKeywords: {
+              type: "array",
+              items: {
+                type: "string",
+              },
+            },
+            vipSenderIds: {
+              type: "array",
+              items: {
+                type: "string",
+              },
+            },
+            vipDelayMinutes: {
+              type: "integer",
+              minimum: 0,
+              maximum: 9007199254740991,
+            },
+            unknownSenderDelayMinutes: {
+              type: "integer",
+              minimum: 0,
+              maximum: 9007199254740991,
+            },
+            notify: {
+              type: "object",
+              properties: {
+                channel: {
+                  type: "string",
+                },
+                to: {
+                  type: "string",
+                },
+                accountId: {
+                  type: "string",
+                },
+              },
+              additionalProperties: false,
+            },
+            repeatedSenderImmediate: {
+              type: "object",
+              properties: {
+                enabled: {
+                  type: "boolean",
+                },
+                count: {
+                  type: "integer",
+                  exclusiveMinimum: 0,
+                  maximum: 9007199254740991,
+                },
+                windowMinutes: {
+                  type: "integer",
+                  exclusiveMinimum: 0,
+                  maximum: 9007199254740991,
+                },
+                appliesTo: {
+                  type: "array",
+                  items: {
+                    type: "string",
+                    enum: ["vip", "unknown"],
+                  },
+                },
+              },
+              additionalProperties: false,
+            },
+            suppressOtp: {
+              type: "boolean",
+            },
+            suppressWorkAfterHours: {
+              type: "boolean",
+            },
+            workHoursStart: {
+              type: "integer",
+              minimum: 0,
+              maximum: 23,
+            },
+            workHoursEnd: {
+              type: "integer",
+              minimum: 0,
+              maximum: 23,
+            },
+          },
+          additionalProperties: false,
         },
         webhookLogging: {
           type: "object",
@@ -329,6 +414,9 @@ export const GENERATED_BUNDLED_CHANNEL_CONFIG_METADATA = [
             },
           },
           additionalProperties: false,
+        },
+        coalesceSameSenderDms: {
+          type: "boolean",
         },
         accounts: {
           type: "object",
@@ -644,8 +732,93 @@ export const GENERATED_BUNDLED_CHANNEL_CONFIG_METADATA = [
                   additionalProperties: false,
                 },
               },
-              coalesceSameSenderDms: {
-                type: "boolean",
+              inboundTriage: {
+                type: "object",
+                properties: {
+                  enabled: {
+                    type: "boolean",
+                  },
+                  immediateKeywords: {
+                    type: "array",
+                    items: {
+                      type: "string",
+                    },
+                  },
+                  vipSenderIds: {
+                    type: "array",
+                    items: {
+                      type: "string",
+                    },
+                  },
+                  vipDelayMinutes: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: 9007199254740991,
+                  },
+                  unknownSenderDelayMinutes: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: 9007199254740991,
+                  },
+                  notify: {
+                    type: "object",
+                    properties: {
+                      channel: {
+                        type: "string",
+                      },
+                      to: {
+                        type: "string",
+                      },
+                      accountId: {
+                        type: "string",
+                      },
+                    },
+                    additionalProperties: false,
+                  },
+                  repeatedSenderImmediate: {
+                    type: "object",
+                    properties: {
+                      enabled: {
+                        type: "boolean",
+                      },
+                      count: {
+                        type: "integer",
+                        exclusiveMinimum: 0,
+                        maximum: 9007199254740991,
+                      },
+                      windowMinutes: {
+                        type: "integer",
+                        exclusiveMinimum: 0,
+                        maximum: 9007199254740991,
+                      },
+                      appliesTo: {
+                        type: "array",
+                        items: {
+                          type: "string",
+                          enum: ["vip", "unknown"],
+                        },
+                      },
+                    },
+                    additionalProperties: false,
+                  },
+                  suppressOtp: {
+                    type: "boolean",
+                  },
+                  suppressWorkAfterHours: {
+                    type: "boolean",
+                  },
+                  workHoursStart: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: 23,
+                  },
+                  workHoursEnd: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: 23,
+                  },
+                },
+                additionalProperties: false,
               },
               webhookLogging: {
                 type: "object",
@@ -655,6 +828,9 @@ export const GENERATED_BUNDLED_CHANNEL_CONFIG_METADATA = [
                   },
                 },
                 additionalProperties: false,
+              },
+              coalesceSameSenderDms: {
+                type: "boolean",
               },
             },
             required: ["enrichGroupParticipantsFromContacts"],
