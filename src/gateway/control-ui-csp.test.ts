@@ -23,6 +23,14 @@ describe("buildControlUiCspHeader", () => {
     expect(csp).not.toContain("img-src 'self' data: blob: https:");
   });
 
+  it("allows configured remote avatar origins without opening all https images", () => {
+    const csp = buildControlUiCspHeader({
+      allowedImageOrigins: ["https://zipline.kcc.casa"],
+    });
+    expect(csp).toContain("img-src 'self' data: blob: https://zipline.kcc.casa");
+    expect(csp).not.toMatch(/img-src[^;]*\shttps:\s/);
+  });
+
   it("includes inline script hashes in script-src when provided", () => {
     const csp = buildControlUiCspHeader({
       inlineScriptHashes: ["sha256-abc123"],

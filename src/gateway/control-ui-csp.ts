@@ -32,11 +32,18 @@ function hasScriptSrcAttribute(openTag: string): boolean {
   );
 }
 
-export function buildControlUiCspHeader(opts?: { inlineScriptHashes?: string[] }): string {
+export function buildControlUiCspHeader(opts?: {
+  inlineScriptHashes?: string[];
+  allowedImageOrigins?: string[];
+}): string {
   const hashes = opts?.inlineScriptHashes;
   const scriptSrc = hashes?.length
     ? `script-src 'self' ${hashes.map((h) => `'${h}'`).join(" ")}`
     : "script-src 'self'";
+  const allowedImageOrigins = (opts?.allowedImageOrigins ?? [])
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  const imgSrc = ["img-src", "'self'", "data:", "blob:", ...allowedImageOrigins].join(" ");
   return [
     "default-src 'self'",
     "base-uri 'none'",
@@ -44,7 +51,7 @@ export function buildControlUiCspHeader(opts?: { inlineScriptHashes?: string[] }
     "frame-ancestors 'none'",
     scriptSrc,
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "img-src 'self' data: blob:",
+    imgSrc,
     "font-src 'self' https://fonts.gstatic.com",
     "worker-src 'self'",
     "connect-src 'self' ws: wss:",

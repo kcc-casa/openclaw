@@ -315,6 +315,33 @@ describe("handleControlUiHttpRequest", () => {
     });
   });
 
+  it("allows the configured remote assistant avatar origin in the control ui CSP", async () => {
+    await withControlUiRoot({
+      fn: async (tmp) => {
+        const { res, setHeader } = makeMockHttpResponse();
+        const handled = await handleControlUiHttpRequest(
+          { url: "/", method: "GET" } as IncomingMessage,
+          res,
+          {
+            root: { kind: "resolved", path: tmp },
+            config: {
+              agents: { defaults: { workspace: tmp } },
+              ui: {
+                assistant: {
+                  name: "Rune",
+                  avatar: "https://zipline.kcc.casa/u/cALc68.png",
+                },
+              },
+            },
+          },
+        );
+        expect(handled).toBe(true);
+        const csp = setHeader.mock.calls.find((call) => call[0] === "Content-Security-Policy")?.[1];
+        expect(String(csp)).toContain("img-src 'self' data: blob: https://zipline.kcc.casa");
+      },
+    });
+  });
+
   it("serves assistant local media through the control ui media route", async () => {
     await withAllowedAssistantMediaRoot({
       prefix: "ui-media-",
