@@ -231,6 +231,12 @@ export async function handleBlueBubblesWebhookRequest(
           firstTarget.runtime,
           `webhook received path=${path} keys=${Object.keys(payload).join(",") || "none"}`,
         );
+        if (firstTarget.account.config.webhookLogging?.enabled) {
+          const rawBody = typeof body.value === "string" ? body.value : JSON.stringify(parsed.value);
+          firstTarget.runtime.log?.(
+            `[bluebubbles] [webhook] full payload path=${path} body=${rawBody}`,
+          );
+        }
       }
       const eventTypeRaw = payload.type;
       const eventType = typeof eventTypeRaw === "string" ? eventTypeRaw.trim() : "";

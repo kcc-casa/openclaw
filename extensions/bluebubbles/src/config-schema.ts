@@ -46,6 +46,13 @@ const bluebubblesNetworkSchema = z
   .strict()
   .optional();
 
+const bluebubblesWebhookLoggingSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+  })
+  .strict()
+  .optional();
+
 const bluebubblesCatchupSchema = z
   .object({
     /** Replay messages delivered while the gateway was unreachable. Defaults to on. */
@@ -64,6 +71,38 @@ const bluebubblesCatchupSchema = z
      * Clamped to [1, 1000].
      */
     maxFailureRetries: z.number().int().positive().optional(),
+  })
+  .strict()
+  .optional();
+
+const bluebubblesInboundTriageSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    immediateKeywords: z.array(z.string()).optional(),
+    vipSenderIds: z.array(z.string()).optional(),
+    vipDelayMinutes: z.number().int().min(0).optional(),
+    unknownSenderDelayMinutes: z.number().int().min(0).optional(),
+    notify: z
+      .object({
+        channel: z.string().optional(),
+        to: z.string().optional(),
+        accountId: z.string().optional(),
+      })
+      .strict()
+      .optional(),
+    repeatedSenderImmediate: z
+      .object({
+        enabled: z.boolean().optional(),
+        count: z.number().int().positive().optional(),
+        windowMinutes: z.number().int().positive().optional(),
+        appliesTo: z.array(z.enum(["vip", "unknown"])).optional(),
+      })
+      .strict()
+      .optional(),
+    suppressOtp: z.boolean().optional(),
+    suppressWorkAfterHours: z.boolean().optional(),
+    workHoursStart: z.number().int().min(0).max(23).optional(),
+    workHoursEnd: z.number().int().min(0).max(23).optional(),
   })
   .strict()
   .optional();
@@ -109,6 +148,8 @@ const bluebubblesAccountSchema = z
      */
     replyContextApiFallback: z.boolean().optional(),
     groups: z.object({}).catchall(bluebubblesGroupConfigSchema).optional(),
+    inboundTriage: bluebubblesInboundTriageSchema,
+    webhookLogging: bluebubblesWebhookLoggingSchema,
     coalesceSameSenderDms: z.boolean().optional(),
   })
   .superRefine((value, ctx) => {
