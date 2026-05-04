@@ -259,8 +259,13 @@ describe("subscribeEmbeddedPiSession", () => {
           approvalSlug: "12345678",
           host: "gateway",
           command: "echo hi",
+          manualApprovalRequired: true,
         },
       },
+    });
+
+    await vi.waitFor(() => {
+      expect(onToolResult).toHaveBeenCalledTimes(1);
     });
 
     emit({
@@ -268,10 +273,7 @@ describe("subscribeEmbeddedPiSession", () => {
       message: { role: "assistant" },
     });
     emitAssistantTextDelta(emit, "After tool");
-
-    await vi.waitFor(() => {
-      expect(onToolResult).toHaveBeenCalledTimes(1);
-    });
+    await Promise.resolve();
     expect(onPartialReply).not.toHaveBeenCalled();
 
     expect(resolveToolResult).toBeTypeOf("function");
@@ -851,7 +853,7 @@ describe("subscribeEmbeddedPiSession", () => {
     );
   });
 
-  it("preserves deterministic side-effect liveness across compaction retries", () => {
+  it("preserves deterministic side-effect liveness across compaction retries", async () => {
     const { session, emit } = createStubSessionHarness();
     const onAgentEvent = vi.fn();
 
@@ -872,6 +874,7 @@ describe("subscribeEmbeddedPiSession", () => {
     });
     emit({ type: "compaction_end", willRetry: true, result: { summary: "compacted" } });
     emit({ type: "agent_end" });
+    await Promise.resolve();
 
     const payloads = extractAgentEventPayloads(onAgentEvent.mock.calls);
     expect(payloads).toContainEqual(
