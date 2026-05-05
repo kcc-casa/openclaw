@@ -157,7 +157,9 @@ vi.mock("../controllers/sessions.ts", () => ({
 
 vi.mock("./agents-utils.ts", () => ({
   isRenderableControlUiAvatarUrl: (value: string) =>
-    /^data:image\//i.test(value) || (value.startsWith("/") && !value.startsWith("//")),
+    /^data:image\//i.test(value) ||
+    /^https?:\/\//i.test(value) ||
+    (value.startsWith("/") && !value.startsWith("//")),
   agentLogoUrl: () => "/openclaw-logo.svg",
   assistantAvatarFallbackUrl: () => "apple-touch-icon.png",
   resolveChatAvatarRenderUrl: (
@@ -165,7 +167,9 @@ vi.mock("./agents-utils.ts", () => ({
     agent: { identity?: { avatar?: string; avatarUrl?: string } },
   ) => {
     const isRenderableControlUiAvatarUrl = (value: string) =>
-      /^data:image\//i.test(value) || (value.startsWith("/") && !value.startsWith("//"));
+      /^data:image\//i.test(value) ||
+      /^https?:\/\//i.test(value) ||
+      (value.startsWith("/") && !value.startsWith("//"));
     if (typeof candidate === "string" && candidate.startsWith("blob:")) {
       return candidate;
     }
