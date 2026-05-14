@@ -136,6 +136,22 @@ function getWakeTargetKey(params: { agentId?: string; sessionKey?: string }) {
   return `${agentId ?? ""}::${sessionKey ?? ""}`;
 }
 
+// Dispatch targeted/action wakes before generic interval wakes. This lets the
+// runner advance a session's nextDueMs before the broad interval sweep runs,
+// which avoids back-to-back heartbeat turns for the same session when both were
+// queued in the same coalescing window.
+function comparePendingWakeOrder(left: PendingWakeReason, right: PendingWakeReason) {
+  const leftTargetSpecificity = (left.sessionKey ? 2 : 0) + (left.agentId ? 1 : 0);
+  const rightTargetSpecificity = (right.sessionKey ? 2 : 0) + (right.agentId ? 1 : 0);
+  if (leftTargetSpecificity !== rightTargetSpecificity) {
+    return rightTargetSpecificity - leftTargetSpecificity;
+  }
+  if (left.priority !== right.priority) {
+    return right.priority - left.priority;
+  }
+  return left.requestedAt - right.requestedAt;
+}
+
 function queuePendingWakeReason(params: {
   source: HeartbeatWakeSource;
   intent: HeartbeatWakeIntent;
@@ -222,39 +238,25 @@ function schedule(coalesceMs: number, kind: WakeTimerKind = "normal") {
         return;
       }
 
-      const pendingBatch = Array.from(pendingWakes.values());
+      const pendingBatch = Array.from(pendingWakes.values()).toSorted(comparePendingWakeOrder);
       pendingWakes.clear();
       running = true;
       try {
         for (const pendingWake of pendingBatch) {
-          const wakeOpts = {
-            source: pendingWake.source,
-            intent: pendingWake.intent,
-            reason: pendingWake.reason ?? undefined,
-            ...(pendingWake.agentId ? { agentId: pendingWake.agentId } : {}),
-            ...(pendingWake.sessionKey ? { sessionKey: pendingWake.sessionKey } : {}),
-            ...(pendingWake.heartbeat ? { heartbeat: pendingWake.heartbeat } : {}),
-          };
-          const res = await active(wakeOpts);
-          if (res.status === "skipped" && isRetryableHeartbeatBusySkipReason(res.reason)) {
-            // The target runtime is busy; retry this wake target soon.
+        const wakeOpts = {
+          source: pendingWake.source,
+          intent: pendingWake.intent,
+          reason: pendingWake.reason ?? undefined,
+          ...(pendingWake.agentId ? { agentId: pendingWake.agentId } : {}),
+          ...(pendingWake.sessionKey ? { sessionKey: pendingWake.sessionKey } : {}),
+          ...(pendingWake.heartbeat ? { heartbeat: pendingWake.heartbeat } : {}),
+        };
+        const res = await active(wakeOpts);
+         if (res.status === "skipped" && isRetryableHeartbeatBusySkipReason(res.reason)) {
+           // The target runtime is busy; retry this wake target soon.
             queuePendingWakeReason({
               source: pendingWake.source,
               intent: pendingWake.intent,
-              reason: pendingWake.reason ?? "retry",
-              agentId: pendingWake.agentId,
-              sessionKey: pendingWake.sessionKey,
-              heartbeat: pendingWake.heartbeat,
-            });
-            schedule(DEFAULT_RETRY_MS, "retry");
-          }
-        }
-      } catch {
-        // Error is already logged by the heartbeat runner; schedule a retry.
-        for (const pendingWake of pendingBatch) {
-          queuePendingWakeReason({
-            source: pendingWake.source,
-            intent: pendingWake.intent,
             reason: pendingWake.reason ?? "retry",
             agentId: pendingWake.agentId,
             sessionKey: pendingWake.sessionKey,
