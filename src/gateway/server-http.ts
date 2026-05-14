@@ -781,6 +781,8 @@ export function createGatewayHttpServer(opts: {
             const { resolveAgentAvatar } = await getIdentityAvatarModule();
             return handleControlUiAvatarRequest(req, res, {
               basePath: controlUiBasePath,
+              config: configSnapshot,
+              agentId: resolveAssistantIdentity({ cfg: configSnapshot }).agentId,
               auth: resolvedAuthValue,
               trustedProxies,
               allowRealIpFallback,

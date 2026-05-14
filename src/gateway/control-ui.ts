@@ -182,9 +182,39 @@ function controlUiAvatarResolutionMeta(resolved: ControlUiAvatarResolution | nul
   };
 }
 
-function applyControlUiSecurityHeaders(res: ServerResponse) {
+function resolveControlUiAllowedImageOrigins(params?: {
+  config?: OpenClawConfig;
+  agentId?: string;
+}): string[] {
+  if (!params?.config) {
+    return [];
+  }
+  const identity = resolveAssistantIdentity({ cfg: params.config, agentId: params.agentId });
+  const resolvedAvatar = resolveAgentAvatar(params.config, identity.agentId, {
+    includeUiOverride: true,
+  });
+  if (resolvedAvatar.kind !== "remote") {
+    return [];
+  }
+  try {
+    const origin = new URL(resolvedAvatar.url).origin;
+    return origin ? [origin] : [];
+  } catch {
+    return [];
+  }
+}
+
+function applyControlUiSecurityHeaders(
+  res: ServerResponse,
+  opts?: { config?: OpenClawConfig; agentId?: string },
+) {
   res.setHeader("X-Frame-Options", "DENY");
-  res.setHeader("Content-Security-Policy", buildControlUiCspHeader());
+  res.setHeader(
+    "Content-Security-Policy",
+    buildControlUiCspHeader({
+      allowedImageOrigins: resolveControlUiAllowedImageOrigins(opts),
+    }),
+  );
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "no-referrer");
 }
@@ -552,7 +582,7 @@ export async function handleControlUiAssistantMediaRequest(
     return false;
   }
 
-  applyControlUiSecurityHeaders(res);
+  applyControlUiSecurityHeaders(res, { config: opts?.config, agentId: opts?.agentId });
   const source = normalizeAssistantMediaSource(url.searchParams.get("source") ?? "");
   if (!source) {
     respondControlUiNotFound(res);
@@ -649,6 +679,8 @@ export async function handleControlUiAvatarRequest(
   res: ServerResponse,
   opts: {
     basePath?: string;
+    config?: OpenClawConfig;
+    agentId?: string;
     resolveAvatar: (agentId: string) => ControlUiAvatarResolution;
     auth?: ResolvedGatewayAuth;
     trustedProxies?: string[];
@@ -674,7 +706,7 @@ export async function handleControlUiAvatarRequest(
     return false;
   }
 
-  applyControlUiSecurityHeaders(res);
+  applyControlUiSecurityHeaders(res, { config: opts?.config, agentId: opts?.agentId });
   const agentIdParts = pathname.slice(pathWithBase.length).split("/").filter(Boolean);
   const agentId = agentIdParts[0] ?? "";
   if (agentIdParts.length !== 1 || !agentId || !isValidAgentId(agentId)) {
@@ -743,12 +775,19 @@ function serveResolvedFile(res: ServerResponse, filePath: string, body: Buffer) 
   res.end(body);
 }
 
-function serveResolvedIndexHtml(res: ServerResponse, body: string) {
+function serveResolvedIndexHtml(
+  res: ServerResponse,
+  body: string,
+  opts?: { config?: OpenClawConfig; agentId?: string },
+) {
   const hashes = computeInlineScriptHashes(body);
   if (hashes.length > 0) {
     res.setHeader(
       "Content-Security-Policy",
-      buildControlUiCspHeader({ inlineScriptHashes: hashes }),
+      buildControlUiCspHeader({
+        inlineScriptHashes: hashes,
+        allowedImageOrigins: resolveControlUiAllowedImageOrigins(opts),
+      }),
     );
   }
   res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -915,19 +954,19 @@ export async function handleControlUiHttpRequest(
     return false;
   }
   if (route.kind === "not-found") {
-    applyControlUiSecurityHeaders(res);
+    applyControlUiSecurityHeaders(res, { config: opts?.config, agentId: opts?.agentId });
     respondControlUiNotFound(res);
     return true;
   }
   if (route.kind === "redirect") {
-    applyControlUiSecurityHeaders(res);
+    applyControlUiSecurityHeaders(res, { config: opts?.config, agentId: opts?.agentId });
     res.statusCode = 302;
     res.setHeader("Location", route.location);
     res.end();
     return true;
   }
 
-  applyControlUiSecurityHeaders(res);
+  applyControlUiSecurityHeaders(res, { config: opts?.config, agentId: opts?.agentId });
 
   if (matchesControlUiBootstrapConfigPath(pathname, basePath)) {
     if (
@@ -1069,7 +1108,10 @@ export async function handleControlUiHttpRequest(
         return true;
       }
       if (path.basename(safeFile.path) === "index.html") {
-        serveResolvedIndexHtml(res, await readOpenedFileText(safeFile.fd));
+        serveResolvedIndexHtml(res, fs.readFileSync(safeFile.fd, "utf8"), {
+          config: opts?.config,
+          agentId: opts?.agentId,
+        });
         return true;
       }
       serveResolvedFile(res, safeFile.path, await readOpenedFile(safeFile.fd));
@@ -1097,7 +1139,10 @@ export async function handleControlUiHttpRequest(
       if (respondHeadForFile(req, res, safeIndex.path)) {
         return true;
       }
-      serveResolvedIndexHtml(res, await readOpenedFileText(safeIndex.fd));
+      serveResolvedIndexHtml(res, fs.readFileSync(safeIndex.fd, "utf8"), {
+        config: opts?.config,
+        agentId: opts?.agentId,
+      });
       return true;
     } finally {
       fs.closeSync(safeIndex.fd);
