@@ -3028,7 +3028,10 @@ export class QmdMemoryManager implements MemorySearchManager {
       if (!this.isWithinRoot(rootResult.path, resolved)) {
         throw new Error("qmd path escapes collection");
       }
-      return resolved;
+      if (fsSync.existsSync(resolved)) {
+        return resolved;
+      }
+      return this.resolveIndexedMirrorReadPath(collection, joined, root.path) ?? resolved;
     }
     const absPath = path.resolve(this.workspaceDir, relPath);
     if (!this.isWithinWorkspace(absPath)) {
@@ -3039,6 +3042,76 @@ export class QmdMemoryManager implements MemorySearchManager {
       throw new Error("path required");
     }
     return absPath;
+  }
+
+  private resolveIndexedMirrorReadPath(
+    collection: string,
+    preferredFile: string,
+    rootPath: string,
+  ): string | null {
+    const mirrorPath = this.lookupIndexedMirrorPath(collection, preferredFile);
+    if (!mirrorPath) {
+      return null;
+    }
+    const resolved = path.resolve(rootPath, mirrorPath);
+    if (!this.isWithinRoot(rootPath, resolved)) {
+      return null;
+    }
+    return resolved;
+  }
+
+  private lookupIndexedMirrorPath(collection: string, preferredFile: string): string | null {
+    const trimmedCollection = collection.trim();
+    const trimmedFile = preferredFile.trim();
+    if (!trimmedCollection || !trimmedFile) {
+      return null;
+    }
+    try {
+      const db = this.ensureDb();
+      const exact = db
+        .prepare(
+          "SELECT d.path, c.doc FROM documents d JOIN content c ON c.hash = d.hash WHERE d.collection = ? AND d.path = ? AND d.active = 1",
+        )
+        .get(trimmedCollection, path.normalize(trimmedFile).replace(/\\/g, "/")) as
+        | { path: string; doc: string }
+        | undefined;
+      const exactMirrorPath = this.extractMirrorPathFromIndexedDoc(exact?.doc);
+      if (exactMirrorPath) {
+        return exactMirrorPath;
+      }
+      const rows = db
+        .prepare(
+          "SELECT d.path, c.doc FROM documents d JOIN content c ON c.hash = d.hash WHERE d.collection = ? AND d.active = 1",
+        )
+        .all(trimmedCollection) as Array<{ path: string; doc: string }>;
+      const matches = rows.filter((row) => this.matchesPreferredFileHint(row.path, trimmedFile));
+      if (matches.length !== 1) {
+        return null;
+      }
+      return this.extractMirrorPathFromIndexedDoc(matches[0]?.doc);
+    } catch (err) {
+      if (this.isSqliteBusyError(err)) {
+        log.debug(`qmd index is busy while resolving mirror-backed path: ${String(err)}`);
+        throw this.createQmdBusyError(err);
+      }
+      log.debug(`qmd mirror-backed path lookup skipped: ${String(err)}`);
+      return null;
+    }
+  }
+
+  private extractMirrorPathFromIndexedDoc(doc: string | undefined): string | null {
+    if (typeof doc !== "string" || !doc.trim()) {
+      return null;
+    }
+    const match = /^mirror_path:\s*(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([^\r\n]+))\s*$/m.exec(doc);
+    if (!match) {
+      return null;
+    }
+    const raw = (match[1] ?? match[2] ?? match[3] ?? "").trim().replace(/\s+#.*$/, "");
+    if (!raw || raw === "." || raw === "..") {
+      return null;
+    }
+    return raw.replace(/\\/g, "/");
   }
 
   private isIndexedWorkspaceReadPath(absPath: string): boolean {
