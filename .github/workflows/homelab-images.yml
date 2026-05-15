@@ -136,6 +136,8 @@ jobs:
           context: .
           file: ./Dockerfile
           platforms: linux/amd64
+          build-args: |
+            OPENCLAW_EXTENSIONS=codex,slack
           tags: ${{ env.IMAGE }}
           provenance: false
           pull: true
