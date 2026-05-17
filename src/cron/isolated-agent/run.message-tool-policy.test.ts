@@ -1088,6 +1088,23 @@ describe("runCronIsolatedAgentTurn message tool policy", () => {
     expect(getAgentRunContext("test-session-id")).toBeUndefined();
   });
 
+  it("disables the message tool for external hook sessions even when delivery.mode is none", async () => {
+    mockRunCronFallbackPassthrough();
+    resolveCronDeliveryPlanMock.mockReturnValue({
+      requested: false,
+      mode: "none",
+    });
+
+    await runCronIsolatedAgentTurn({
+      ...makeParams(),
+      sessionKey: "hook:message-triage:imessage:test",
+      deliveryContract: "shared",
+    });
+
+    expect(runEmbeddedPiAgentMock).toHaveBeenCalledTimes(1);
+    expect(runEmbeddedPiAgentMock.mock.calls[0]?.[0]?.disableMessageTool).toBe(true);
+  });
+
   it("skips cron delivery when output is heartbeat-only", async () => {
     mockRunCronFallbackPassthrough();
     resolveCronDeliveryPlanMock.mockReturnValue(makeAnnounceDeliveryPlan());

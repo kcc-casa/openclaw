@@ -481,9 +481,25 @@ function resetRunConfigMocks(): void {
     ({ message }: { message?: string }) => message ?? "",
   );
   detectSuspiciousPatternsMock.mockReturnValue([]);
-  mapHookExternalContentSourceMock.mockReturnValue("unknown");
-  isExternalHookSessionMock.mockReturnValue(false);
-  resolveHookExternalContentSourceMock.mockReturnValue(undefined);
+  mapHookExternalContentSourceMock.mockImplementation((source: unknown) =>
+    source === "gmail" ? "email" : "webhook",
+  );
+  isExternalHookSessionMock.mockImplementation(
+    (sessionKey: string) => typeof sessionKey === "string" && sessionKey.toLowerCase().startsWith("hook:"),
+  );
+  resolveHookExternalContentSourceMock.mockImplementation((sessionKey: string) => {
+    if (typeof sessionKey !== "string") {
+      return undefined;
+    }
+    const normalized = sessionKey.toLowerCase();
+    if (normalized.startsWith("hook:gmail:")) {
+      return "gmail";
+    }
+    if (normalized.startsWith("hook:")) {
+      return "webhook";
+    }
+    return undefined;
+  });
   getSkillsSnapshotVersionMock.mockReturnValue(42);
   loadModelCatalogMock.mockResolvedValue([]);
   getRemoteSkillEligibilityMock.mockResolvedValue({ remoteSkillsEnabled: false });

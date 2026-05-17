@@ -212,6 +212,7 @@ type CronExecutionResult = Awaited<ReturnType<CronExecutionRuntime["executeCronR
 type CronModelCatalogRuntime = typeof import("./run-model-catalog.runtime.js");
 type CronDeliveryRuntime = typeof import("./run-delivery.runtime.js");
 type ResolvedCronDeliveryTarget = Awaited<ReturnType<CronDeliveryRuntime["resolveDeliveryTarget"]>>;
+type IsolatedDeliveryContract = "cron-owned" | "shared";
 
 function normalizeCronTraceTarget(
   target: CronDeliveryTraceTarget | undefined,
@@ -314,6 +315,7 @@ function buildCronDeliveryTrace(params: {
 function resolveCronSourceDeliveryPlan(params: {
   deliveryPlan: CronDeliveryPlan;
   resolvedDelivery: ResolvedCronDeliveryTarget;
+  isExternalHookSession: boolean;
 }): SourceDeliveryPlan {
   const target = {
     channel: params.resolvedDelivery.channel,
@@ -337,7 +339,7 @@ function resolveCronSourceDeliveryPlan(params: {
       owner: "none",
       reason: "cron_none",
       target,
-      messageToolEnabled: true,
+      messageToolEnabled: !params.isExternalHookSession,
       messageToolForced: false,
       directFallback: false,
     });
@@ -346,7 +348,7 @@ function resolveCronSourceDeliveryPlan(params: {
     owner: "direct_fallback",
     reason: "cron_announce",
     target,
-    messageToolEnabled: true,
+    messageToolEnabled: !params.isExternalHookSession,
     messageToolForced: false,
     requireExplicitMessageTarget: true,
     requireExplicitMessageTargetEvidence: true,
@@ -377,6 +379,8 @@ export async function resolveCronDeliveryContext(params: {
   cfg: OpenClawConfig;
   job: CronJob;
   agentId: string;
+  deliveryContract: IsolatedDeliveryContract;
+  isExternalHookSession: boolean;
 }) {
   const deliveryPlan = resolveCronDeliveryPlan(params.job);
   if (deliveryPlan.mode === "webhook") {
@@ -393,7 +397,11 @@ export async function resolveCronDeliveryContext(params: {
       deliveryPlan,
       deliveryRequested: deliveryPlan.requested,
       resolvedDelivery,
-      sourceDelivery: resolveCronSourceDeliveryPlan({ deliveryPlan, resolvedDelivery }),
+      sourceDelivery: resolveCronSourceDeliveryPlan({
+        deliveryPlan,
+        resolvedDelivery,
+        isExternalHookSession: params.isExternalHookSession,
+      }),
     };
   }
   if (deliveryPlan.mode === "none" && !hasExplicitCronDeliveryTarget(deliveryPlan)) {
@@ -410,7 +418,11 @@ export async function resolveCronDeliveryContext(params: {
       deliveryPlan,
       deliveryRequested: false,
       resolvedDelivery,
-      sourceDelivery: resolveCronSourceDeliveryPlan({ deliveryPlan, resolvedDelivery }),
+      sourceDelivery: resolveCronSourceDeliveryPlan({
+        deliveryPlan,
+        resolvedDelivery,
+        isExternalHookSession: params.isExternalHookSession,
+      }),
     };
   }
   const { resolveDeliveryTarget } = await loadCronDeliveryRuntime();
@@ -431,7 +443,11 @@ export async function resolveCronDeliveryContext(params: {
     deliveryPlan,
     deliveryRequested: deliveryPlan.requested,
     resolvedDelivery,
-    sourceDelivery: resolveCronSourceDeliveryPlan({ deliveryPlan, resolvedDelivery }),
+    sourceDelivery: resolveCronSourceDeliveryPlan({
+      deliveryPlan,
+      resolvedDelivery,
+      isExternalHookSession: params.isExternalHookSession,
+    }),
   };
 }
 
@@ -480,6 +496,7 @@ type RunCronAgentTurnParams = {
   sessionKey: string;
   agentId?: string;
   lane?: string;
+  deliveryContract?: IsolatedDeliveryContract;
 };
 
 function resolveCronAgentTurnMessage(input: RunCronAgentTurnParams): string {
@@ -801,17 +818,19 @@ async function prepareCronRunContext(params: {
   const runTimeoutOverrideMs = resolveCronRunTimeoutOverrideMs(explicitTimeoutSeconds);
   const agentPayload = input.job.payload.kind === "agentTurn" ? input.job.payload : null;
   const { deliveryPlan, deliveryRequested, resolvedDelivery, sourceDelivery } =
+  const isExternalHook =
+    hookExternalContentSource !== undefined || isExternalHookSession(baseSessionKey);
     await resolveCronDeliveryContext({
       cfg: cfgWithAgentDefaults,
       job: input.job,
       agentId,
+      deliveryContract: input.deliveryContract ?? "cron-owned",
+      isExternalHookSession: isExternalHook,
     });
 
   const { formattedTime, timeLine } = resolveCronStyleNow(input.cfg, now);
   const message = resolveCronAgentTurnMessage(input);
   const base = `[cron:${input.job.id} ${input.job.name}] ${message}`.trim();
-  const isExternalHook =
-    hookExternalContentSource !== undefined || isExternalHookSession(baseSessionKey);
   const allowUnsafeExternalContent =
     agentPayload?.allowUnsafeExternalContent === true ||
     (isGmailHook && input.cfg.hooks?.gmail?.allowUnsafeExternalContent === true);
