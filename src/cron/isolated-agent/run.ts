@@ -169,6 +169,7 @@ type CronExecutionResult = Awaited<ReturnType<CronExecutionRuntime["executeCronR
 type CronModelCatalogRuntime = typeof import("./run-model-catalog.runtime.js");
 type CronDeliveryRuntime = typeof import("./run-delivery.runtime.js");
 type ResolvedCronDeliveryTarget = Awaited<ReturnType<CronDeliveryRuntime["resolveDeliveryTarget"]>>;
+type IsolatedDeliveryContract = "cron-owned" | "shared";
 
 function normalizeCronTraceTarget(
   target: CronDeliveryTraceTarget | undefined,
@@ -309,12 +310,15 @@ function resolveMessagingToolSentTargets(params: {
   ];
 }
 
-function resolveCronToolPolicy(params: { deliveryMode: "announce" | "webhook" | "none" }) {
+function resolveCronToolPolicy(params: {
+  deliveryMode: "announce" | "webhook" | "none";
+  isExternalHookSession: boolean;
+}) {
   const enableMessageTool = params.deliveryMode !== "webhook";
   return {
     requireExplicitMessageTarget: false,
-    disableMessageTool: !enableMessageTool,
-    forceMessageTool: enableMessageTool,
+    disableMessageTool: params.isExternalHookSession || !enableMessageTool,
+    forceMessageTool: !params.isExternalHookSession && enableMessageTool,
   };
 }
 
@@ -338,6 +342,8 @@ async function resolveCronDeliveryContext(params: {
   cfg: OpenClawConfig;
   job: CronJob;
   agentId: string;
+  deliveryContract: IsolatedDeliveryContract;
+  isExternalHookSession: boolean;
 }) {
   const deliveryPlan = resolveCronDeliveryPlan(params.job);
   if (deliveryPlan.mode === "webhook") {
@@ -356,6 +362,7 @@ async function resolveCronDeliveryContext(params: {
       resolvedDelivery,
       toolPolicy: resolveCronToolPolicy({
         deliveryMode: deliveryPlan.mode,
+        isExternalHookSession: params.isExternalHookSession,
       }),
     };
   }
@@ -374,6 +381,7 @@ async function resolveCronDeliveryContext(params: {
       },
       toolPolicy: resolveCronToolPolicy({
         deliveryMode: deliveryPlan.mode,
+        isExternalHookSession: params.isExternalHookSession,
       }),
     };
   }
@@ -391,6 +399,7 @@ async function resolveCronDeliveryContext(params: {
     resolvedDelivery,
     toolPolicy: resolveCronToolPolicy({
       deliveryMode: deliveryPlan.mode,
+      isExternalHookSession: params.isExternalHookSession,
     }),
   };
 }
@@ -437,6 +446,7 @@ type RunCronAgentTurnParams = {
   sessionKey: string;
   agentId?: string;
   lane?: string;
+  deliveryContract?: IsolatedDeliveryContract;
 };
 
 type WithRunSession = (
@@ -675,17 +685,19 @@ async function prepareCronRunContext(params: {
       ? explicitTimeoutSeconds * 1000
       : undefined;
   const agentPayload = input.job.payload.kind === "agentTurn" ? input.job.payload : null;
+  const isExternalHook =
+    hookExternalContentSource !== undefined || isExternalHookSession(baseSessionKey);
   const { deliveryPlan, deliveryRequested, resolvedDelivery, toolPolicy } =
     await resolveCronDeliveryContext({
-      cfg: cfgWithAgentDefaults,
-      job: input.job,
-      agentId,
-    });
+    cfg: cfgWithAgentDefaults,
+    job: input.job,
+    agentId,
+    deliveryContract: input.deliveryContract ?? "cron-owned",
+    isExternalHookSession: isExternalHook,
+  });
 
   const { formattedTime, timeLine } = resolveCronStyleNow(input.cfg, now);
   const base = `[cron:${input.job.id} ${input.job.name}] ${input.message}`.trim();
-  const isExternalHook =
-    hookExternalContentSource !== undefined || isExternalHookSession(baseSessionKey);
   const allowUnsafeExternalContent =
     agentPayload?.allowUnsafeExternalContent === true ||
     (isGmailHook && input.cfg.hooks?.gmail?.allowUnsafeExternalContent === true);
