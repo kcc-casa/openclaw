@@ -585,6 +585,12 @@ function recordDiagnosticEvent(
         modelCallLabels(evt),
         seconds(evt.durationMs),
       );
+      store.histogram(
+        "openclaw_model_call_time_to_first_byte_seconds",
+        "Provider model call time to first byte in seconds.",
+        modelCallLabels(evt),
+        seconds(evt.timeToFirstByteMs),
+      );
       store.counter(
         "openclaw_model_call_total",
         "Provider model calls completed by outcome.",
@@ -673,6 +679,25 @@ function recordDiagnosticEvent(
         "openclaw_webhook_error_total",
         "Webhook processing errors by channel and update type.",
         webhookLabels(evt),
+      );
+      return;
+    case "message.typing.started":
+      store.counter(
+        "openclaw_message_typing_started_total",
+        "Typing indicators started by channel and source.",
+        {
+          channel: lowCardinalityLabel(evt.channel),
+          source: lowCardinalityLabel(evt.source),
+        },
+      );
+      store.histogram(
+        "openclaw_message_typing_start_delay_seconds",
+        "Delay before the first typing indicator starts in seconds.",
+        {
+          channel: lowCardinalityLabel(evt.channel),
+          source: lowCardinalityLabel(evt.source),
+        },
+        seconds(evt.delayMs),
       );
       return;
     case "message.delivery.started":

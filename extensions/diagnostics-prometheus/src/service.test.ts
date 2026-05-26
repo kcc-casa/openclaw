@@ -1,4 +1,3 @@
-// Diagnostics Prometheus tests cover service plugin behavior.
 import type { DiagnosticEventPrivateData } from "openclaw/plugin-sdk/diagnostic-runtime";
 // Diagnostics Prometheus tests cover service plugin behavior.
 import { describe, expect, it, vi } from "vitest";
@@ -75,6 +74,41 @@ describe("diagnostics-prometheus service", () => {
     expect(rendered).not.toContain("run-should-not-export");
     expect(rendered).not.toContain("session-should-not-export");
     expect(rendered).not.toContain("matched secret prompt");
+  });
+
+  it("records model call duration and time-to-first-byte metrics", () => {
+    const store = testApi.createPrometheusMetricStore();
+
+    testApi.recordDiagnosticEvent(
+      store,
+      {
+        ...baseEvent(),
+        type: "model.call.completed",
+        runId: "run-should-not-export",
+        callId: "call-should-not-export",
+        provider: "openai",
+        model: "gpt-5.4",
+        api: "responses",
+        transport: "https",
+        durationMs: 1400,
+        timeToFirstByteMs: 250,
+      },
+      trusted,
+    );
+
+    const rendered = testApi.renderPrometheusMetrics(store);
+
+    expect(rendered).toContain(
+      'openclaw_model_call_total{api="responses",error_category="none",model="gpt-5.4",outcome="completed",provider="openai",transport="https"} 1',
+    );
+    expect(rendered).toContain(
+      'openclaw_model_call_duration_seconds_sum{api="responses",error_category="none",model="gpt-5.4",outcome="completed",provider="openai",transport="https"} 1.4',
+    );
+    expect(rendered).toContain(
+      'openclaw_model_call_time_to_first_byte_seconds_sum{api="responses",error_category="none",model="gpt-5.4",outcome="completed",provider="openai",transport="https"} 0.25',
+    );
+    expect(rendered).not.toContain("run-should-not-export");
+    expect(rendered).not.toContain("call-should-not-export");
   });
 
   it("drops untrusted plugin-emitted diagnostic events", () => {
@@ -492,6 +526,33 @@ describe("diagnostics-prometheus service", () => {
     expect(rendered).not.toContain("message-should-not-export");
     expect(rendered).not.toContain("session-should-not-export");
     expect(rendered).not.toContain("progress draft");
+  });
+
+  it("records typing-start telemetry with bounded labels", () => {
+    const store = testApi.createPrometheusMetricStore();
+
+    testApi.recordDiagnosticEvent(
+      store,
+      {
+        ...baseEvent(),
+        type: "message.typing.started",
+        channel: "slack",
+        source: "heartbeat",
+        sessionKey: "session-should-not-export",
+        delayMs: 3200,
+      },
+      trusted,
+    );
+
+    const rendered = testApi.renderPrometheusMetrics(store);
+
+    expect(rendered).toContain(
+      'openclaw_message_typing_started_total{channel="slack",source="heartbeat"} 1',
+    );
+    expect(rendered).toContain(
+      'openclaw_message_typing_start_delay_seconds_sum{channel="slack",source="heartbeat"} 3.2',
+    );
+    expect(rendered).not.toContain("session-should-not-export");
   });
 
   it("records inbound dispatch and session turn telemetry", () => {

@@ -204,6 +204,14 @@ export type DiagnosticMessageProcessedEvent = DiagnosticBaseEvent & {
   error?: string;
 };
 
+export type DiagnosticMessageTypingStartedEvent = DiagnosticBaseEvent & {
+  type: "message.typing.started";
+  channel: string;
+  sessionKey?: string;
+  source: string;
+  delayMs?: number;
+};
+
 export type DiagnosticMessageDeliveryKind = "text" | "media" | "edit" | "reaction" | "other";
 
 type DiagnosticMessageDeliveryBaseEvent = DiagnosticBaseEvent & {
@@ -722,6 +730,7 @@ export type DiagnosticEventPayload =
   | DiagnosticMessageDispatchStartedEvent
   | DiagnosticMessageDispatchCompletedEvent
   | DiagnosticMessageProcessedEvent
+  | DiagnosticMessageTypingStartedEvent
   | DiagnosticMessageDeliveryStartedEvent
   | DiagnosticMessageDeliveryCompletedEvent
   | DiagnosticMessageDeliveryErrorEvent
@@ -844,6 +853,7 @@ const ASYNC_DIAGNOSTIC_EVENT_TYPES = new Set<DiagnosticEventPayload["type"]>([
   "message.delivery.started",
   "message.delivery.completed",
   "message.delivery.error",
+  "message.typing.started",
   "talk.event",
   "model.call.started",
   "model.call.completed",
