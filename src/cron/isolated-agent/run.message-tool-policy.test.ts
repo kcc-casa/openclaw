@@ -716,6 +716,22 @@ describe("runCronIsolatedAgentTurn message tool policy", () => {
     expectEmbeddedRunFields({ disableMessageTool: false });
   });
 
+  it("disables the message tool for external hook sessions even when delivery.mode is none", async () => {
+    mockRunCronFallbackPassthrough();
+    resolveCronDeliveryPlanMock.mockReturnValue({
+      requested: false,
+      mode: "none",
+    });
+
+    await runCronIsolatedAgentTurn({
+      ...makeParams(),
+      sessionKey: "hook:message-triage:imessage:test",
+    });
+
+    expect(runEmbeddedPiAgentMock).toHaveBeenCalledTimes(1);
+    expect(runEmbeddedPiAgentMock.mock.calls[0]?.[0]?.disableMessageTool).toBe(true);
+  });
+
   it("releases cron run context references after completion", async () => {
     const cronSession = makeCronSession({
       store: { "agent:default:cron:message-tool-policy": { retained: true } },

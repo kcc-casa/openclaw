@@ -120,6 +120,7 @@ describe("QmdMemoryManager slugified path resolution", () => {
     actualPath?: string;
     exactPaths?: string[];
     allPaths?: string[];
+    docsByPath?: Record<string, string>;
   }) {
     const inner = params.manager as unknown as {
       db: {
@@ -133,6 +134,11 @@ describe("QmdMemoryManager slugified path resolution", () => {
     inner.db = {
       prepare: (query: string) => ({
         get: (...args: unknown[]) => {
+          if (query.includes("JOIN content c ON c.hash = d.hash")) {
+            expect(args).toEqual([params.collection, params.normalizedPath]);
+            const doc = params.docsByPath?.[params.normalizedPath];
+            return doc ? { path: params.normalizedPath, doc } : undefined;
+          }
           if (query.includes("collection = ? AND active = 1 AND path = ?")) {
             expect(args[0]).toBe(params.collection);
             const requestedPath = args[1];
@@ -148,6 +154,13 @@ describe("QmdMemoryManager slugified path resolution", () => {
           throw new Error(`unexpected sqlite query: ${query}`);
         },
         all: (...args: unknown[]) => {
+          if (query.includes("JOIN content c ON c.hash = d.hash")) {
+            expect(args).toEqual([params.collection]);
+            return Object.entries(params.docsByPath ?? {}).map(([pathValue, doc]) => ({
+              path: pathValue,
+              doc,
+            }));
+          }
           if (query.includes("collection = ? AND path = ? AND active = 1")) {
             expect(args).toEqual([params.collection, params.normalizedPath]);
             return (params.exactPaths ?? []).map((pathValue) => ({ path: pathValue }));
@@ -387,6 +400,65 @@ describe("QmdMemoryManager slugified path resolution", () => {
       text: "exact slugified path",
       from: 1,
       lines: 1,
+    });
+  });
+
+  it("falls back to mirror_path when a slugified Apple Notes note path has no direct file", async () => {
+    const mirroredRelative =
+      "05 Content Pipeline/Drafts/how-to-talk-to-a-parent-about-accepting-help--p682.md";
+    const mirroredFile = path.join(workspaceDir, mirroredRelative);
+    await fs.mkdir(path.dirname(mirroredFile), { recursive: true });
+    await fs.writeFile(mirroredFile, "apple note body", "utf-8");
+
+    const { manager } = await createManager();
+    installIndexedPathStub({
+      manager,
+      collection: "workspace-main",
+      normalizedPath:
+        "05-content-pipeline/drafts/how-to-talk-to-a-parent-about-accepting-help-p682.md",
+      docsByPath: {
+        "05-content-pipeline/drafts/how-to-talk-to-a-parent-about-accepting-help-p682.md": `---\nmirror_path: "${mirroredRelative}"\n---\napple note body`,
+      },
+    });
+
+    await expect(
+      manager.readFile({
+        relPath:
+          "qmd/workspace-main/05-content-pipeline/drafts/how-to-talk-to-a-parent-about-accepting-help-p682.md",
+      }),
+    ).resolves.toEqual({
+      path: "qmd/workspace-main/05-content-pipeline/drafts/how-to-talk-to-a-parent-about-accepting-help-p682.md",
+      text: "apple note body",
+      from: 1,
+      lines: 1,
+    });
+  });
+
+  it("falls back to mirror_path for slugified QMD index notes under _indexes", async () => {
+    const mirroredRelative = "_indexes/05 Content Pipeline/Drafts index.md";
+    const mirroredFile = path.join(workspaceDir, mirroredRelative);
+    await fs.mkdir(path.dirname(mirroredFile), { recursive: true });
+    await fs.writeFile(mirroredFile, "# Drafts index\n", "utf-8");
+
+    const { manager } = await createManager();
+    installIndexedPathStub({
+      manager,
+      collection: "workspace-main",
+      normalizedPath: "indexes/05-content-pipeline/drafts-index.md",
+      docsByPath: {
+        "indexes/05-content-pipeline/drafts-index.md": `---\nmirror_path: ${mirroredRelative}\n---\n# Drafts index`,
+      },
+    });
+
+    await expect(
+      manager.readFile({
+        relPath: "qmd/workspace-main/indexes/05-content-pipeline/drafts-index.md",
+      }),
+    ).resolves.toEqual({
+      path: "qmd/workspace-main/indexes/05-content-pipeline/drafts-index.md",
+      text: "# Drafts index\n",
+      from: 1,
+      lines: 2,
     });
   });
 });

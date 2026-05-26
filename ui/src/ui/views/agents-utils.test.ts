@@ -146,12 +146,12 @@ describe("resolveAgentAvatarUrl", () => {
     ).toBe("/avatar/main");
   });
 
-  it("ignores remote http avatars so the control UI falls back to a local badge", () => {
+  it("accepts remote http(s) avatars exposed by the trusted backend", () => {
     expect(
       resolveAgentAvatarUrl({
         identity: { avatarUrl: "https://example.com/avatar.png" },
       }),
-    ).toBeNull();
+    ).toBe("https://example.com/avatar.png");
   });
 
   it("ignores protocol-relative avatars so the control UI cannot be tricked into a cross-origin fetch", () => {
@@ -185,12 +185,12 @@ describe("resolveChatAvatarRenderUrl", () => {
     ).toBe("/avatar/main");
   });
 
-  it("rejects remote URLs passed as the render candidate", () => {
+  it("accepts remote URLs passed as the render candidate", () => {
     expect(
       resolveChatAvatarRenderUrl("https://example.com/avatar.png", {
         identity: { avatarUrl: "/avatar/main" },
       }),
-    ).toBe("/avatar/main");
+    ).toBe("https://example.com/avatar.png");
   });
 });
 
