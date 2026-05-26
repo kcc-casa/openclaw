@@ -779,6 +779,17 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
         unit: "1",
         description: "Messages processed by outcome",
       });
+      const messageTypingStartedCounter = meter.createCounter("openclaw.message.typing.started", {
+        unit: "1",
+        description: "Typing indicators started",
+      });
+      const messageTypingDelayHistogram = meter.createHistogram(
+        "openclaw.message.typing.start_delay_ms",
+        {
+          unit: "ms",
+          description: "Delay before the first typing indicator starts",
+        },
+      );
       const messageDurationHistogram = meter.createHistogram("openclaw.message.duration_ms", {
         unit: "ms",
         description: "Message processing duration",
@@ -1376,6 +1387,34 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
           span.setStatus({ code: SpanStatusCode.ERROR, message: redactSensitiveText(evt.error) });
         }
         span.end();
+      };
+
+      const recordMessageTypingStarted = (
+        evt: Extract<DiagnosticEventPayload, { type: "message.typing.started" }>,
+      ) => {
+        const attrs = {
+          "openclaw.channel": lowCardinalityAttr(evt.channel),
+          "openclaw.source": lowCardinalityAttr(evt.source),
+        };
+        messageTypingStartedCounter.add(1, attrs);
+        if (typeof evt.delayMs === "number") {
+          messageTypingDelayHistogram.record(evt.delayMs, attrs);
+        }
+        if (!tracesEnabled) {
+          return;
+        }
+        const span = spanWithDuration(
+          "openclaw.message.typing.started",
+          {
+            ...attrs,
+            ...(typeof evt.delayMs === "number"
+              ? { "openclaw.message.typing.delay_ms": evt.delayMs }
+              : {}),
+          },
+          evt.delayMs,
+          { endTimeMs: evt.ts },
+        );
+        span.end(evt.ts);
       };
 
       const messageDeliveryAttrs = (
@@ -2353,6 +2392,9 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
               return;
             case "message.processed":
               recordMessageProcessed(evt);
+              return;
+            case "message.typing.started":
+              recordMessageTypingStarted(evt);
               return;
             case "message.delivery.started":
               recordMessageDeliveryStarted(evt);

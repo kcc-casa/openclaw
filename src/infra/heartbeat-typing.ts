@@ -1,6 +1,7 @@
 import type { ChannelHeartbeatDeps, ChannelPlugin } from "../channels/plugins/types.public.js";
 import { createTypingCallbacks, type TypingCallbacks } from "../channels/typing.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { emitDiagnosticEvent } from "./diagnostic-events.js";
 
 const DEFAULT_HEARTBEAT_TYPING_INTERVAL_SECONDS = 6;
 
@@ -20,6 +21,8 @@ export function createHeartbeatTypingCallbacks(params: {
   target: HeartbeatTypingTarget;
   plugin?: Pick<ChannelPlugin, "heartbeat">;
   deps?: ChannelHeartbeatDeps;
+  sessionKey?: string;
+  startedAtMs?: number;
   typingIntervalSeconds?: number;
   log?: HeartbeatTypingLogger;
 }): TypingCallbacks | undefined {
@@ -34,6 +37,7 @@ export function createHeartbeatTypingCallbacks(params: {
     typeof params.typingIntervalSeconds === "number" && params.typingIntervalSeconds > 0
       ? params.typingIntervalSeconds * 1000
       : DEFAULT_HEARTBEAT_TYPING_INTERVAL_SECONDS * 1000;
+  let emittedTypingStarted = false;
   const target = {
     cfg: params.cfg,
     to,
@@ -45,6 +49,18 @@ export function createHeartbeatTypingCallbacks(params: {
   return createTypingCallbacks({
     start: async () => {
       await sendTyping(target);
+      if (!emittedTypingStarted) {
+        emittedTypingStarted = true;
+        emitDiagnosticEvent({
+          type: "message.typing.started",
+          channel: params.target.channel,
+          source: "heartbeat",
+          ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
+          ...(typeof params.startedAtMs === "number"
+            ? { delayMs: Math.max(0, Date.now() - params.startedAtMs) }
+            : {}),
+        });
+      }
     },
     ...(clearTyping
       ? {

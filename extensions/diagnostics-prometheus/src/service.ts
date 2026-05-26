@@ -528,6 +528,25 @@ function recordDiagnosticEvent(
         seconds(evt.durationMs),
       );
       return;
+    case "message.typing.started":
+      store.counter(
+        "openclaw_message_typing_started_total",
+        "Typing indicators started by channel and source.",
+        {
+          channel: lowCardinalityLabel(evt.channel),
+          source: lowCardinalityLabel(evt.source),
+        },
+      );
+      store.histogram(
+        "openclaw_message_typing_start_delay_seconds",
+        "Delay before the first typing indicator starts in seconds.",
+        {
+          channel: lowCardinalityLabel(evt.channel),
+          source: lowCardinalityLabel(evt.source),
+        },
+        seconds(evt.delayMs),
+      );
+      return;
     case "message.delivery.started":
       store.counter(
         "openclaw_message_delivery_started_total",

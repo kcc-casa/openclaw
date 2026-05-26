@@ -102,6 +102,8 @@ For traces, logs, OTLP push, and OpenTelemetry GenAI semantic attributes, see [O
 | `openclaw_harness_run_duration_seconds`       | histogram | `channel`, `error_category`, `harness`, `model`, `outcome`, `phase`, `plugin`, `provider` |
 | `openclaw_message_processed_total`            | counter   | `channel`, `outcome`, `reason`                                                            |
 | `openclaw_message_processed_duration_seconds` | histogram | `channel`, `outcome`, `reason`                                                            |
+| `openclaw_message_typing_started_total`       | counter   | `channel`, `source`                                                                       |
+| `openclaw_message_typing_start_delay_seconds` | histogram | `channel`, `source`                                                                       |
 | `openclaw_message_delivery_started_total`     | counter   | `channel`, `delivery_kind`                                                                |
 | `openclaw_message_delivery_total`             | counter   | `channel`, `delivery_kind`, `error_category`, `outcome`                                   |
 | `openclaw_message_delivery_duration_seconds`  | histogram | `channel`, `delivery_kind`, `error_category`, `outcome`                                   |

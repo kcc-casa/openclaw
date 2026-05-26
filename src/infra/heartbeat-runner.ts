@@ -1619,6 +1619,8 @@ export async function runHeartbeatOnce(opts: {
           },
           ...(heartbeatChannelPlugin ? { plugin: heartbeatChannelPlugin } : {}),
           ...(opts.deps ? { deps: opts.deps } : {}),
+          sessionKey,
+          startedAtMs: startedAt,
           ...(heartbeatTypingIntervalSeconds !== undefined
             ? { typingIntervalSeconds: heartbeatTypingIntervalSeconds }
             : {}),

@@ -176,6 +176,33 @@ describe("diagnostics-prometheus service", () => {
     expect(rendered).not.toContain("progress draft");
   });
 
+  it("records typing-start telemetry with bounded labels", () => {
+    const store = __test__.createPrometheusMetricStore();
+
+    __test__.recordDiagnosticEvent(
+      store,
+      {
+        ...baseEvent(),
+        type: "message.typing.started",
+        channel: "slack",
+        source: "heartbeat",
+        sessionKey: "session-should-not-export",
+        delayMs: 3200,
+      },
+      trusted,
+    );
+
+    const rendered = __test__.renderPrometheusMetrics(store);
+
+    expect(rendered).toContain(
+      'openclaw_message_typing_started_total{channel="slack",source="heartbeat"} 1',
+    );
+    expect(rendered).toContain(
+      'openclaw_message_typing_start_delay_seconds_sum{channel="slack",source="heartbeat"} 3.2',
+    );
+    expect(rendered).not.toContain("session-should-not-export");
+  });
+
   it("records session recovery and talk metrics without exporting raw ids or content", () => {
     const store = __test__.createPrometheusMetricStore();
 
