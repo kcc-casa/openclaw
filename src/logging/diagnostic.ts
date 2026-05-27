@@ -4,6 +4,7 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
   areDiagnosticsEnabledForProcess,
   emitDiagnosticEvent,
+  emitTrustedDiagnosticEvent,
   isDiagnosticsEnabled,
   type DiagnosticPhaseSnapshot,
   type DiagnosticLivenessWarningReason,
@@ -483,7 +484,7 @@ export function logWebhookReceived(params: {
       } total=${webhookStats.received}`,
     );
   }
-  emitDiagnosticEvent({
+  emitTrustedDiagnosticEvent({
     type: "webhook.received",
     channel: params.channel,
     updateType: params.updateType,
@@ -511,7 +512,7 @@ export function logWebhookProcessed(params: {
       }`,
     );
   }
-  emitDiagnosticEvent({
+  emitTrustedDiagnosticEvent({
     type: "webhook.processed",
     channel: params.channel,
     updateType: params.updateType,
@@ -536,7 +537,7 @@ export function logWebhookError(params: {
       params.chatId ?? "unknown"
     } error="${params.error}" errors=${webhookStats.errors}`,
   );
-  emitDiagnosticEvent({
+  emitTrustedDiagnosticEvent({
     type: "webhook.error",
     channel: params.channel,
     updateType: params.updateType,
@@ -568,7 +569,7 @@ export function logMessageQueued(params: {
       } source=${params.source} queueDepth=${state.queueDepth} sessionState=${state.state}`,
     );
   }
-  emitDiagnosticEvent({
+  emitTrustedDiagnosticEvent({
     type: "message.queued",
     sessionId: state.sessionId,
     sessionKey: state.sessionKey,
@@ -610,7 +611,7 @@ export function logMessageProcessed(params: {
       diag.debug(payload);
     }
   }
-  emitDiagnosticEvent({
+  emitTrustedDiagnosticEvent({
     type: "message.processed",
     channel: params.channel,
     chatId: params.chatId,
@@ -654,7 +655,7 @@ export function logSessionStateChange(
       }`,
     );
   }
-  emitDiagnosticEvent({
+  emitTrustedDiagnosticEvent({
     type: "session.state",
     sessionId: state.sessionId,
     sessionKey: state.sessionKey,
