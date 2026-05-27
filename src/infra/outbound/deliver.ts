@@ -43,7 +43,7 @@ import { resolveAgentScopedOutboundMediaAccess } from "../../media/read-capabili
 import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
 import { diagnosticErrorCategory } from "../diagnostic-error-metadata.js";
 import {
-  emitInternalDiagnosticEvent as emitDiagnosticEvent,
+  emitTrustedDiagnosticEvent,
   type DiagnosticMessageDeliveryKind,
 } from "../diagnostic-events.js";
 import { formatErrorMessage } from "../errors.js";
@@ -722,7 +722,7 @@ function emitMessageDeliveryStarted(params: {
   deliveryKind: DiagnosticMessageDeliveryKind;
   sessionKey?: string;
 }): void {
-  emitDiagnosticEvent({
+  emitTrustedDiagnosticEvent({
     type: "message.delivery.started",
     channel: params.channel,
     deliveryKind: params.deliveryKind,
@@ -737,7 +737,7 @@ function emitMessageDeliveryCompleted(params: {
   resultCount: number;
   sessionKey?: string;
 }): void {
-  emitDiagnosticEvent({
+  emitTrustedDiagnosticEvent({
     type: "message.delivery.completed",
     channel: params.channel,
     deliveryKind: params.deliveryKind,
@@ -754,7 +754,7 @@ function emitMessageDeliveryError(params: {
   error: unknown;
   sessionKey?: string;
 }): void {
-  emitDiagnosticEvent({
+  emitTrustedDiagnosticEvent({
     type: "message.delivery.error",
     channel: params.channel,
     deliveryKind: params.deliveryKind,
