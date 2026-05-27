@@ -43,6 +43,7 @@ import {
   toPluginMessageReceivedEvent,
 } from "../../hooks/message-hook-mappers.js";
 import { isDiagnosticsEnabled } from "../../infra/diagnostic-events.js";
+import { emitTrustedDiagnosticEvent } from "../../infra/diagnostic-events.js";
 import { measureDiagnosticsTimelineSpan } from "../../infra/diagnostics-timeline.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { getSessionBindingService } from "../../infra/outbound/session-binding-service.js";
@@ -430,6 +431,24 @@ export async function dispatchReplyFromConfig(
       outcome,
       reason: opts?.reason,
       error: opts?.error,
+    });
+  };
+  let emittedSourceReplyTypingStarted = false;
+  const emitSourceReplyTypingStarted = (source: string) => {
+    if (
+      emittedSourceReplyTypingStarted ||
+      !diagnosticsEnabled ||
+      sourceReplyDeliveryMode !== "message_tool_only"
+    ) {
+      return;
+    }
+    emittedSourceReplyTypingStarted = true;
+    emitTrustedDiagnosticEvent({
+      type: "message.typing.started",
+      channel,
+      source,
+      ...(sessionKey ? { sessionKey } : {}),
+      delayMs: Math.max(0, Date.now() - startTime),
     });
   };
 
@@ -1349,9 +1368,10 @@ export async function dispatchReplyFromConfig(
           onPartialReply: wrapProgressCallback(params.replyOptions?.onPartialReply),
           onReasoningStream: wrapProgressCallback(params.replyOptions?.onReasoningStream),
           onReasoningEnd: wrapProgressCallback(params.replyOptions?.onReasoningEnd),
-          onAssistantMessageStart: wrapProgressCallback(
-            params.replyOptions?.onAssistantMessageStart,
-          ),
+          onAssistantMessageStart: wrapProgressCallback(async () => {
+            emitSourceReplyTypingStarted("assistant_message_start");
+            await params.replyOptions?.onAssistantMessageStart?.();
+          }),
           onBlockReplyQueued: wrapProgressCallback(params.replyOptions?.onBlockReplyQueued),
           onToolStart: wrapProgressCallback(params.replyOptions?.onToolStart, {
             forwardWhenSourceDeliverySuppressed: true,

@@ -312,6 +312,29 @@ function modelCallLabels(evt: {
   };
 }
 
+function webhookLabels(evt: { channel?: string; updateType?: string; type: string }): LabelSet {
+  return {
+    channel: lowCardinalityLabel(evt.channel),
+    outcome:
+      evt.type === "webhook.received"
+        ? "received"
+        : evt.type === "webhook.error"
+          ? "error"
+          : "processed",
+    update_type: lowCardinalityLabel(evt.updateType, "unknown"),
+  };
+}
+
+function messageProcessedLabels(
+  evt: Extract<DiagnosticEventPayload, { type: "message.processed" }>,
+): LabelSet {
+  return {
+    channel: lowCardinalityLabel(evt.channel),
+    outcome: evt.outcome,
+    reason: lowCardinalityLabel(evt.reason, "none"),
+  };
+}
+
 function toolExecutionLabels(evt: {
   errorCategory?: string;
   paramsSummary?: { kind: string };
@@ -477,11 +500,34 @@ function recordDiagnosticEvent(
         modelCallLabels(evt),
         seconds(evt.durationMs),
       );
+      store.histogram(
+        "openclaw_model_call_time_to_first_byte_seconds",
+        "Provider model call time to first byte in seconds.",
+        modelCallLabels(evt),
+        seconds(evt.timeToFirstByteMs),
+      );
       store.counter(
         "openclaw_model_call_total",
         "Provider model calls completed by outcome.",
         modelCallLabels(evt),
       );
+      return;
+    case "webhook.received":
+    case "webhook.processed":
+    case "webhook.error":
+      store.counter(
+        "openclaw_webhook_total",
+        "Webhook lifecycle events by outcome.",
+        webhookLabels(evt),
+      );
+      if (evt.type === "webhook.processed") {
+        store.histogram(
+          "openclaw_webhook_duration_seconds",
+          "Webhook processing duration in seconds.",
+          webhookLabels(evt),
+          seconds(evt.durationMs),
+        );
+      }
       return;
     case "tool.execution.completed":
     case "tool.execution.error":
@@ -512,19 +558,26 @@ function recordDiagnosticEvent(
       );
       return;
     case "message.processed":
-      store.counter("openclaw_message_processed_total", "Inbound messages processed by outcome.", {
-        channel: lowCardinalityLabel(evt.channel),
-        outcome: evt.outcome,
-        reason: lowCardinalityLabel(evt.reason, "none"),
-      });
+      store.counter(
+        "openclaw_message_processed_total",
+        "Inbound messages processed by outcome.",
+        messageProcessedLabels(evt),
+      );
       store.histogram(
         "openclaw_message_processed_duration_seconds",
         "Inbound message processing duration in seconds.",
-        {
-          channel: lowCardinalityLabel(evt.channel),
-          outcome: evt.outcome,
-          reason: lowCardinalityLabel(evt.reason, "none"),
-        },
+        messageProcessedLabels(evt),
+        seconds(evt.durationMs),
+      );
+      store.counter(
+        "openclaw_message_dispatch_total",
+        "Inbound message dispatch completions by outcome.",
+        messageProcessedLabels(evt),
+      );
+      store.histogram(
+        "openclaw_message_dispatch_duration_seconds",
+        "Inbound message dispatch duration in seconds.",
+        messageProcessedLabels(evt),
         seconds(evt.durationMs),
       );
       return;

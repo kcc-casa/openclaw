@@ -203,6 +203,68 @@ describe("diagnostics-prometheus service", () => {
     expect(rendered).not.toContain("session-should-not-export");
   });
 
+  it("records webhook, dispatch, and model TTFB metrics", () => {
+    const store = __test__.createPrometheusMetricStore();
+
+    __test__.recordDiagnosticEvent(
+      store,
+      {
+        ...baseEvent(),
+        type: "webhook.processed",
+        channel: "slack",
+        updateType: "event_callback",
+        durationMs: 120,
+      },
+      trusted,
+    );
+    __test__.recordDiagnosticEvent(
+      store,
+      {
+        ...baseEvent(),
+        type: "message.processed",
+        channel: "slack",
+        outcome: "completed",
+        reason: "none",
+        durationMs: 850,
+      },
+      trusted,
+    );
+    __test__.recordDiagnosticEvent(
+      store,
+      {
+        ...baseEvent(),
+        type: "model.call.completed",
+        runId: "run-1",
+        callId: "call-1",
+        provider: "openai",
+        model: "gpt-5.4",
+        api: "responses",
+        transport: "https",
+        durationMs: 1400,
+        timeToFirstByteMs: 250,
+      },
+      trusted,
+    );
+
+    const rendered = __test__.renderPrometheusMetrics(store);
+
+    expect(rendered).toContain(
+      'openclaw_webhook_total{channel="slack",outcome="processed",update_type="event_callback"} 1',
+    );
+    expect(rendered).toContain(
+      'openclaw_webhook_duration_seconds_sum{channel="slack",outcome="processed",update_type="event_callback"} 0.12',
+    );
+    expect(rendered).toContain(
+      'openclaw_message_dispatch_total{channel="slack",outcome="completed",reason="none"} 1',
+    );
+    expect(rendered).toContain(
+      'openclaw_message_dispatch_duration_seconds_sum{channel="slack",outcome="completed",reason="none"} 0.85',
+    );
+    expect(rendered).toContain(
+      'openclaw_model_call_time_to_first_byte_seconds_sum{api="responses",error_category="none",model="gpt-5.4",outcome="completed",provider="openai",transport="https"} 0.25',
+    );
+  });
+
   it("records session recovery and talk metrics without exporting raw ids or content", () => {
     const store = __test__.createPrometheusMetricStore();
 
