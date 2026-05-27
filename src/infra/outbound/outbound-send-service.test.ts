@@ -8,6 +8,7 @@ import {
   createTestRegistry,
 } from "../../test-utils/channel-plugins.js";
 import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../../utils/message-channel.js";
+import { onInternalDiagnosticEvent, resetDiagnosticEventsForTest } from "../diagnostic-events.js";
 
 const getDefaultMediaLocalRootsMock = vi.hoisted(() => vi.fn(() => []));
 const dispatchChannelMessageActionMock = vi.hoisted(() => vi.fn());
@@ -237,6 +238,7 @@ describe("executeSendAction", () => {
 
   beforeEach(() => {
     setActivePluginRegistry(createTestRegistry([]));
+    resetDiagnosticEventsForTest();
     mocks.dispatchChannelMessageAction.mockClear();
     mocks.sendMessage.mockClear();
     mocks.sendPoll.mockClear();
@@ -274,6 +276,44 @@ describe("executeSendAction", () => {
       to: "channel:123",
       content: "hello",
     });
+  });
+
+  it("emits delivery diagnostics for plugin-handled sends", async () => {
+    const events: Array<{ type: string; channel?: string; deliveryKind?: string }> = [];
+    const stop = onInternalDiagnosticEvent((event) => {
+      if (event.type.startsWith("message.delivery.")) {
+        events.push({
+          type: event.type,
+          channel: "channel" in event ? event.channel : undefined,
+          deliveryKind: "deliveryKind" in event ? event.deliveryKind : undefined,
+        });
+      }
+    });
+    mocks.dispatchChannelMessageAction.mockResolvedValue(pluginActionResult("msg-plugin"));
+
+    try {
+      await executeSendAction({
+        ctx: {
+          cfg: {},
+          channel: "demo-outbound",
+          params: { to: "channel:123", message: "hello" },
+          sessionKey: "agent:main:demo-outbound:channel:123",
+          dryRun: false,
+        },
+        to: "channel:123",
+        message: "hello",
+      });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    } finally {
+      stop();
+    }
+
+    expect(events.map((event) => event.type)).toEqual([
+      "message.delivery.started",
+      "message.delivery.completed",
+    ]);
+    expect(events[0]).toMatchObject({ channel: "demo-outbound", deliveryKind: "text" });
+    expect(events[1]).toMatchObject({ channel: "demo-outbound", deliveryKind: "text" });
   });
 
   it("forwards requesterSenderId to sendMessage on core outbound path", async () => {

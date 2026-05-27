@@ -15,6 +15,11 @@ import type { OutboundMediaAccess, OutboundMediaReadFile } from "../../media/loa
 import { resolveAgentScopedOutboundMediaAccess } from "../../media/read-capability.js";
 import { extractToolPayload } from "../../plugin-sdk/tool-payload.js";
 import type { GatewayClientMode, GatewayClientName } from "../../utils/message-channel.js";
+import { diagnosticErrorCategory } from "../diagnostic-error-metadata.js";
+import {
+  emitTrustedDiagnosticEvent,
+  type DiagnosticMessageDeliveryKind,
+} from "../diagnostic-events.js";
 import { throwIfAborted } from "./abort.js";
 import { resolveOutboundChannelPlugin } from "./channel-resolution.js";
 import type { OutboundSendDeps } from "./deliver.js";
@@ -60,6 +65,62 @@ export type OutboundSendContext = {
   abortSignal?: AbortSignal;
   silent?: boolean;
 };
+
+function resolveDiagnosticDeliveryKind(payload: ReplyPayload): DiagnosticMessageDeliveryKind {
+  if (payload.mediaUrl || (Array.isArray(payload.mediaUrls) && payload.mediaUrls.length > 0)) {
+    return "media";
+  }
+  if (payload.presentation || payload.interactive || payload.channelData || payload.audioAsVoice) {
+    return "other";
+  }
+  return "text";
+}
+
+function emitPluginSendDeliveryStarted(params: {
+  channel: ChannelId;
+  deliveryKind: DiagnosticMessageDeliveryKind;
+  sessionKey?: string;
+}) {
+  emitTrustedDiagnosticEvent({
+    type: "message.delivery.started",
+    channel: params.channel,
+    deliveryKind: params.deliveryKind,
+    ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
+  });
+}
+
+function emitPluginSendDeliveryCompleted(params: {
+  channel: ChannelId;
+  deliveryKind: DiagnosticMessageDeliveryKind;
+  durationMs: number;
+  sessionKey?: string;
+}) {
+  emitTrustedDiagnosticEvent({
+    type: "message.delivery.completed",
+    channel: params.channel,
+    deliveryKind: params.deliveryKind,
+    durationMs: params.durationMs,
+    resultCount: 1,
+    ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
+  });
+}
+
+function emitPluginSendDeliveryError(params: {
+  channel: ChannelId;
+  deliveryKind: DiagnosticMessageDeliveryKind;
+  durationMs: number;
+  error: unknown;
+  sessionKey?: string;
+}) {
+  emitTrustedDiagnosticEvent({
+    type: "message.delivery.error",
+    channel: params.channel,
+    deliveryKind: params.deliveryKind,
+    durationMs: params.durationMs,
+    errorCategory: diagnosticErrorCategory(params.error),
+    ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
+  });
+}
 
 type PluginHandledResult = {
   handledBy: "plugin";
@@ -270,6 +331,7 @@ export async function executeSendAction(params: {
     mediaUrls: params.mediaUrls,
     audioAsVoice: params.asVoice === true,
   };
+  const deliveryKind = resolveDiagnosticDeliveryKind(defaultPayload);
   const queuePolicy = params.bestEffort === false ? "required" : "best_effort";
   const preparedPayload = await tryPreparePluginSendPayload({
     ctx: params.ctx,
@@ -294,30 +356,58 @@ export async function executeSendAction(params: {
     };
   }
 
-  const pluginHandled = await tryHandleWithPluginAction({
-    ctx: params.ctx,
-    action: "send",
-    onHandled: async () => {
-      if (!params.ctx.mirror) {
-        return;
-      }
-      const mirrorText = params.ctx.mirror.text ?? params.message;
-      const mirrorMediaUrls =
-        params.ctx.mirror.mediaUrls ??
-        params.mediaUrls ??
-        (params.mediaUrl ? [params.mediaUrl] : undefined);
-      await appendAssistantMessageToSessionTranscript({
-        agentId: params.ctx.mirror.agentId,
-        sessionKey: params.ctx.mirror.sessionKey,
-        text: mirrorText,
-        mediaUrls: mirrorMediaUrls,
-        idempotencyKey: params.ctx.mirror.idempotencyKey,
-        config: params.ctx.cfg,
+  const startedAt = Date.now();
+  try {
+    const pluginHandled = await tryHandleWithPluginAction({
+      ctx: params.ctx,
+      action: "send",
+      onHandled: async () => {
+        if (!params.ctx.mirror) {
+          return;
+        }
+        const mirrorText = params.ctx.mirror.text ?? params.message;
+        const mirrorMediaUrls =
+          params.ctx.mirror.mediaUrls ??
+          params.mediaUrls ??
+          (params.mediaUrl ? [params.mediaUrl] : undefined);
+        await appendAssistantMessageToSessionTranscript({
+          agentId: params.ctx.mirror.agentId,
+          sessionKey: params.ctx.mirror.sessionKey,
+          text: mirrorText,
+          mediaUrls: mirrorMediaUrls,
+          idempotencyKey: params.ctx.mirror.idempotencyKey,
+          config: params.ctx.cfg,
+        });
+      },
+    });
+    if (pluginHandled) {
+      emitPluginSendDeliveryStarted({
+        channel: params.ctx.channel,
+        deliveryKind,
+        sessionKey: params.ctx.sessionKey,
       });
-    },
-  });
-  if (pluginHandled) {
-    return pluginHandled;
+      emitPluginSendDeliveryCompleted({
+        channel: params.ctx.channel,
+        deliveryKind,
+        durationMs: Math.max(0, Date.now() - startedAt),
+        sessionKey: params.ctx.sessionKey,
+      });
+      return pluginHandled;
+    }
+  } catch (error) {
+    emitPluginSendDeliveryStarted({
+      channel: params.ctx.channel,
+      deliveryKind,
+      sessionKey: params.ctx.sessionKey,
+    });
+    emitPluginSendDeliveryError({
+      channel: params.ctx.channel,
+      deliveryKind,
+      durationMs: Math.max(0, Date.now() - startedAt),
+      error,
+      sessionKey: params.ctx.sessionKey,
+    });
+    throw error;
   }
 
   throwIfAborted(params.ctx.abortSignal);
