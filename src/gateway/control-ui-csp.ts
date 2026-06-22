@@ -34,8 +34,6 @@ function hasScriptSrcAttribute(openTag: string): boolean {
   );
 }
 
-/** Build the CSP header applied to Gateway-served Control UI HTML. */
-export function buildControlUiCspHeader(opts?: { inlineScriptHashes?: string[] }): string {
 export function buildControlUiCspHeader(opts?: {
   inlineScriptHashes?: string[];
   allowedImageOrigins?: string[];
